@@ -5,18 +5,70 @@ import { DEFAULT_SUPABASE_KEY, DEFAULT_SUPABASE_URL } from './storage';
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseConfig() {
-  const url = localStorage.getItem('app_supabase_url') || DEFAULT_SUPABASE_URL;
-  const key = localStorage.getItem('app_supabase_key') || DEFAULT_SUPABASE_KEY;
+  const env = (import.meta as any).env || {};
+
+  // Check Netlify/Vite environment variables with both prefixes
+  const envUrl = (
+    env.VITE_SUPABASE_URL ||
+    env.SUPABASE_URL ||
+    env.VITE_PUBLIC_SUPABASE_URL ||
+    env.NEXT_PUBLIC_SUPABASE_URL ||
+    ''
+  ).trim();
+
+  const envKey = (
+    env.VITE_SUPABASE_ANON_KEY ||
+    env.VITE_SUPABASE_KEY ||
+    env.SUPABASE_ANON_KEY ||
+    env.SUPABASE_KEY ||
+    env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+
+  // Check localStorage (user manually entered in Settings panel)
+  const storedUrl = (localStorage.getItem('app_supabase_url') || '').trim();
+  const storedKey = (localStorage.getItem('app_supabase_key') || '').trim();
+
+  const isInvalidOrDemoKey = (k: string) => !k || k.includes('...') || k.length < 35;
+
+  let url = storedUrl;
+  let key = storedKey;
+
+  // If localStorage has an invalid or demo key, or is empty, but environment has valid keys:
+  if ((!url || !key || isInvalidOrDemoKey(key)) && envUrl && envKey && !isInvalidOrDemoKey(envKey)) {
+    url = envUrl;
+    key = envKey;
+    try {
+      localStorage.setItem('app_supabase_url', envUrl);
+      localStorage.setItem('app_supabase_key', envKey);
+    } catch (_) {}
+  } else if (!url || !key) {
+    url = url || envUrl || DEFAULT_SUPABASE_URL;
+    key = key || envKey || DEFAULT_SUPABASE_KEY;
+  }
+
   return { url, key };
 }
 
 export function initSupabase(): SupabaseClient | null {
   const { url, key } = getSupabaseConfig();
   if (!url || !key) return null;
+
+  // If the key is an obvious truncated placeholder with '...', do not attempt request
+  if (key.includes('...') || key.length < 35) {
+    console.warn("Supabase key is a placeholder or truncated. Please provide a valid Supabase anon key.");
+    return null;
+  }
+
   try {
-    supabaseInstance = createClient(url, key, {
-      auth: { persistSession: false }
-    });
+    if (!supabaseInstance || (supabaseInstance as any)?.__url !== url || (supabaseInstance as any)?.__key !== key) {
+      supabaseInstance = createClient(url, key, {
+        auth: { persistSession: false }
+      });
+      (supabaseInstance as any).__url = url;
+      (supabaseInstance as any).__key = key;
+    }
     return supabaseInstance;
   } catch (err) {
     console.warn("Could not initialize Supabase:", err);
