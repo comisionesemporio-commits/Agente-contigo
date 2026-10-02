@@ -449,6 +449,56 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     onShowToast('Cotización Cargada', `Se cargó la propuesta de ${q.clientName}.`, 'info');
   };
 
+  // Delete individual quote
+  const handleDeleteQuote = async (quoteId: string, clientTitle: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar la cotización de "${clientTitle}"?`)) {
+      return;
+    }
+
+    const updated = savedQuotesList.filter(q => q.id !== quoteId);
+    setSavedQuotesList(updated);
+    saveQuotes(updated);
+
+    // Also delete from Supabase if connected
+    const sb = initSupabase();
+    if (sb) {
+      try {
+        await sb.from('cotizaciones').delete().eq('id', quoteId);
+      } catch (err) {
+        console.warn('Could not delete quote from Supabase:', err);
+      }
+    }
+
+    onShowToast('Cotización Eliminada', `Se eliminó la propuesta de "${clientTitle}".`, 'info');
+  };
+
+  // Clear all saved quotes / test runs
+  const handleClearAllQuotes = async () => {
+    if (savedQuotesList.length === 0) return;
+
+    if (!window.confirm(`¿Deseas eliminar las ${savedQuotesList.length} cotizaciones guardadas del historial? Esta acción borrará todas las pruebas.`)) {
+      return;
+    }
+
+    const ids = savedQuotesList.map(q => q.id);
+    setSavedQuotesList([]);
+    saveQuotes([]);
+
+    // Delete from Supabase if connected
+    const sb = initSupabase();
+    if (sb && ids.length > 0) {
+      try {
+        await sb.from('cotizaciones').delete().in('id', ids);
+      } catch (err) {
+        console.warn('Could not delete quotes from Supabase:', err);
+      }
+    }
+
+    onShowToast('Historial Vaciado', 'Se han borrado todas las cotizaciones de prueba.', 'info');
+  };
+
   const totalMonthly = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
 
   return (
@@ -1120,28 +1170,66 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
 
       {/* Historial de Cotizaciones Guardadas */}
       {savedQuotesList.length > 0 && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-3 no-print">
-          <h3 className="text-xs font-black uppercase text-slate-800 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-emerald-600" />
-            Historial de Cotizaciones Guardadas ({savedQuotesList.length})
-          </h3>
+        <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
+            <div>
+              <h3 className="text-xs font-black uppercase text-slate-800 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-600" />
+                Historial de Cotizaciones Guardadas ({savedQuotesList.length})
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Haz clic en una cotización para recargarla o en el icono de papelera para eliminarla.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClearAllQuotes}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer border border-rose-200 self-start sm:self-auto"
+              title="Borrar todas las cotizaciones de prueba"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Borrar Todas las Pruebas</span>
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
             {savedQuotesList.map(q => (
               <div
                 key={q.id}
                 onClick={() => loadSavedQuote(q)}
-                className="p-3.5 rounded-xl border border-slate-200 hover:border-teal-400 hover:bg-slate-50/60 transition cursor-pointer space-y-1.5"
+                className="p-3.5 rounded-2xl border border-slate-200 hover:border-teal-400 hover:bg-slate-50/70 transition cursor-pointer space-y-2 relative group shadow-sm"
               >
-                <div className="flex justify-between items-center font-bold text-slate-900">
-                  <span className="truncate">{q.clientName}</span>
-                  <span className="font-mono text-emerald-700">${q.totalMonthlyPremium.toFixed(2)}/mes</span>
+                <div className="flex justify-between items-start gap-2">
+                  <span className="font-black text-slate-900 truncate block">
+                    {q.clientName}
+                  </span>
+                  
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="font-mono font-black text-emerald-700 text-xs">
+                      ${q.totalMonthlyPremium.toFixed(2)}/mes
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteQuote(q.id, q.clientName, e)}
+                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-100/70 rounded-lg transition cursor-pointer"
+                      title={`Eliminar cotización de ${q.clientName}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
+
                 <div className="text-[11px] text-slate-500 flex justify-between">
-                  <span>{q.location} · {q.members}</span>
-                  <span>{q.year}</span>
+                  <span>📍 {q.location} · 👥 {q.members}</span>
+                  <span className="font-semibold text-slate-600">{q.year}</span>
                 </div>
-                <div className="text-[10px] text-slate-400">
-                  {q.plans.length} planes · Asesor: {q.agentName}
+
+                <div className="text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-100 pt-1.5">
+                  <span>{q.plans.length} plan(es) · Asesor: {q.agentName}</span>
+                  <span className="text-teal-600 font-bold group-hover:underline">
+                    Cargar →
+                  </span>
                 </div>
               </div>
             ))}
