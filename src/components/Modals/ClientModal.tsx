@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClientPolicy, HealthQuestions } from '../../types';
+import { ClientPolicy, HealthQuestions, Agent } from '../../types';
 import {
   X, UserPen, RotateCw, Trash2, Save,
   Building, Phone, MapPin, HeartPulse, User
@@ -13,6 +13,7 @@ interface ClientModalProps {
   customCarriers: string[];
   customStatuses: string[];
   customSellers: string[];
+  agents?: Agent[];
   onClose: () => void;
   onSave: (clientData: ClientPolicy) => void;
   onDelete: (clientId: string) => void;
@@ -26,6 +27,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
   customCarriers,
   customStatuses,
   customSellers,
+  agents,
   onClose,
   onSave,
   onDelete,
@@ -35,13 +37,14 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
   useEffect(() => {
     if (client) {
-      setFormData({ ...client });
+      setFormData({ ...client, agente: client.agente || client.vendedor || 'General' });
     } else {
       setFormData({
         id: '',
         nombre: '',
         numPoliza: '',
         vendedor: 'General',
+        agente: 'General',
         createdYear: selectedYear,
         estatus: 'Activo',
         carrier: 'Oscar',
@@ -515,8 +518,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             </div>
           </div>
 
-          {/* Status & Seller */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Status, Seller, Agent & Policy Number */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="block font-bold text-slate-700 uppercase mb-1">Estatus Póliza</label>
               <select
@@ -531,7 +534,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 uppercase mb-1">Vendedor / Agente</label>
+              <label className="block font-bold text-slate-700 uppercase mb-1">Vendedor</label>
               <input
                 type="text"
                 list="client-modal-sellers"
@@ -543,6 +546,27 @@ export const ClientModal: React.FC<ClientModalProps> = ({
               <datalist id="client-modal-sellers">
                 {customSellers.map(v => (
                   <option key={v} value={v} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <label className="block font-bold text-indigo-900 uppercase mb-1">Agente (NPN / Licencia)</label>
+              <input
+                type="text"
+                list="client-modal-agents"
+                value={formData.agente || ''}
+                onChange={e => handleChange('agente', e.target.value)}
+                placeholder="Ej. Virginia García"
+                className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-xs font-semibold bg-indigo-50/40 text-indigo-950 focus:ring-2 focus:ring-indigo-500"
+              />
+              <datalist id="client-modal-agents">
+                {agents && agents.map(a => {
+                  const full = `${a.nombre} ${a.apellido || ''}`.trim();
+                  return <option key={a.id || full} value={full} />;
+                })}
+                {customSellers.map(v => (
+                  <option key={`seller-as-agent-${v}`} value={v} />
                 ))}
               </datalist>
             </div>

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ClientPolicy, CommissionItem } from '../types';
+import React, { useState, useMemo } from 'react';
+import { ClientPolicy, CommissionItem, Agent } from '../types';
 import {
   Lock, Unlock, Calendar, Search, Filter, ChevronDown,
   DollarSign, CheckCircle2, Clock, TrendingUp, PieChart, Edit
@@ -8,6 +8,7 @@ import { MONTHS_LIST } from '../services/storage';
 
 interface CommissionsViewProps {
   clients: ClientPolicy[];
+  agents?: Agent[];
   selectedYear: string;
   customCarriers: string[];
   customSellers: string[];
@@ -34,6 +35,7 @@ export function getClientCommission(client: ClientPolicy, year: string, month: s
 
 export const CommissionsView: React.FC<CommissionsViewProps> = ({
   clients,
+  agents,
   selectedYear,
   customCarriers,
   customSellers,
@@ -45,6 +47,8 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState('TODOS');
   const [searchTerm, setSearchTerm] = useState('');
   const [carrierFilter, setCarrierFilter] = useState('');
+  const [selectedSellers, setSelectedSellers] = useState<string[]>([]);
+  const [showSellerMenu, setShowSellerMenu] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
 
@@ -77,17 +81,55 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
 
   const yearClients = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
 
+  // Dynamic available agents list
+  const availableAgents = useMemo(() => {
+    const set = new Set<string>();
+    if (agents) {
+      agents.forEach(a => {
+        const full = `${a.nombre} ${a.apellido || ''}`.trim();
+        if (full) set.add(full);
+      });
+    }
+    yearClients.forEach(c => {
+      if (c.agente && c.agente.trim()) set.add(c.agente.trim());
+    });
+    if (set.size === 0) {
+      set.add("Virginia García");
+      set.add("Junior Pérez");
+      set.add("Carlos Mendoza");
+      set.add("Dani Rodríguez");
+    }
+    return Array.from(set).sort();
+  }, [agents, yearClients]);
+
   const filteredClients = yearClients.filter(c => {
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       const match = (c.nombre || '').toLowerCase().includes(q) ||
         (c.ssn || '').includes(q) ||
         (c.vendedor || '').toLowerCase().includes(q) ||
+        (c.agente || '').toLowerCase().includes(q) ||
         (c.numPoliza || '').toLowerCase().includes(q);
       if (!match) return false;
     }
     if (carrierFilter && c.carrier !== carrierFilter) return false;
-    if (selectedAgents.length > 0 && !selectedAgents.includes((c.vendedor || 'General').trim())) return false;
+
+    // Filter by Vendedor
+    if (selectedSellers.length > 0 && !selectedSellers.includes((c.vendedor || 'General').trim())) {
+      return false;
+    }
+
+    // Filter by Agente
+    if (selectedAgents.length > 0) {
+      const clientAgent = (c.agente || c.vendedor || 'General').trim();
+      const match = selectedAgents.some(ag =>
+        ag.toLowerCase() === clientAgent.toLowerCase() ||
+        clientAgent.toLowerCase().includes(ag.toLowerCase()) ||
+        ag.toLowerCase().includes(clientAgent.toLowerCase())
+      );
+      if (!match) return false;
+    }
+
     return true;
   });
 
@@ -119,6 +161,14 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
       if (comm.paid) annualTotalSum += (comm.amount || 30.00);
     });
   });
+
+  const toggleSeller = (name: string) => {
+    if (selectedSellers.includes(name)) {
+      setSelectedSellers(selectedSellers.filter(s => s !== name));
+    } else {
+      setSelectedSellers([...selectedSellers, name]);
+    }
+  };
 
   const toggleAgent = (name: string) => {
     if (selectedAgents.includes(name)) {
@@ -173,19 +223,21 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-        <div className="md:col-span-2 relative">
+      {/* Filters Toolbar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        {/* Search Input */}
+        <div className="sm:col-span-2 lg:col-span-2 relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
           <input
             type="text"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Buscar por cliente, Social, Póliza o Vendedor..."
+            placeholder="Buscar por cliente, Social, Póliza, Vendedor o Agente..."
             className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-medium"
           />
         </div>
 
+        {/* Carrier Filter */}
         <div>
           <select
             value={carrierFilter}
@@ -199,43 +251,88 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
           </select>
         </div>
 
+        {/* Sellers Filter (Multi-select) */}
         <div className="relative">
           <button
             type="button"
-            onClick={() => setShowAgentMenu(!showAgentMenu)}
+            onClick={() => { setShowSellerMenu(!showSellerMenu); setShowAgentMenu(false); }}
             className="w-full py-2 px-3 border border-slate-300 rounded-lg text-xs font-extrabold text-slate-800 bg-white flex items-center justify-between focus:ring-2 focus:ring-emerald-500 focus:outline-none"
           >
             <span className="truncate">
-              {selectedAgents.length === 0
-                ? '👤 Agentes / Vendedores: Todos'
-                : selectedAgents.length === 1
-                ? `👤 ${selectedAgents[0]}`
-                : `👥 ${selectedAgents.length} Seleccionados`}
+              {selectedSellers.length === 0
+                ? '👤 Vendedores: Todos'
+                : selectedSellers.length === 1
+                ? `👤 ${selectedSellers[0]}`
+                : `👥 ${selectedSellers.length} Vendedores`}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1" />
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-1 shrink-0" />
           </button>
 
-          {showAgentMenu && (
+          {showSellerMenu && (
             <div className="absolute z-40 right-0 left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 space-y-1 max-h-56 overflow-y-auto text-xs">
               <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1 px-1">
-                <span className="font-extrabold text-[10px] text-slate-400 uppercase">Filtrar por Agente</span>
+                <span className="font-extrabold text-[10px] text-slate-400 uppercase">Vendedores</span>
                 <button
                   type="button"
-                  onClick={() => { setSelectedAgents([]); setShowAgentMenu(false); }}
+                  onClick={() => { setSelectedSellers([]); setShowSellerMenu(false); }}
                   className="text-[10px] text-emerald-600 font-bold hover:underline"
                 >
                   Limpiar
                 </button>
               </div>
               {customSellers.map(v => (
-                <label key={v} className="flex items-center space-x-2 px-1 py-1 hover:bg-emerald-50 rounded cursor-pointer text-slate-800 font-semibold text-xs">
+                <label key={v} className="flex items-center space-x-2 px-1 py-1 hover:bg-slate-50 rounded cursor-pointer text-slate-800 font-semibold text-xs">
                   <input
                     type="checkbox"
-                    checked={selectedAgents.includes(v)}
-                    onChange={() => toggleAgent(v)}
+                    checked={selectedSellers.includes(v)}
+                    onChange={() => toggleSeller(v)}
                     className="w-3.5 h-3.5 text-emerald-600 rounded"
                   />
                   <span>👤 {v}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Agents Filter (Multi-select) */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => { setShowAgentMenu(!showAgentMenu); setShowSellerMenu(false); }}
+            className="w-full py-2 px-3 border border-indigo-200 rounded-lg text-xs font-extrabold text-indigo-950 bg-indigo-50/60 hover:bg-indigo-50 flex items-center justify-between focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          >
+            <span className="truncate">
+              {selectedAgents.length === 0
+                ? '🎖️ Agentes: Todos'
+                : selectedAgents.length === 1
+                ? `🎖️ ${selectedAgents[0]}`
+                : `👥 ${selectedAgents.length} Agentes`}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-indigo-500 ml-1 shrink-0" />
+          </button>
+
+          {showAgentMenu && (
+            <div className="absolute z-40 right-0 left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 space-y-1 max-h-56 overflow-y-auto text-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1 px-1">
+                <span className="font-extrabold text-[10px] text-indigo-600 uppercase">Agentes con Licencia</span>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedAgents([]); setShowAgentMenu(false); }}
+                  className="text-[10px] text-indigo-600 font-bold hover:underline"
+                >
+                  Limpiar
+                </button>
+              </div>
+              {availableAgents.map(ag => (
+                <label key={ag} className="flex items-center space-x-2 px-1 py-1 hover:bg-indigo-50/60 rounded cursor-pointer text-slate-800 font-semibold text-xs">
+                  <input
+                    type="checkbox"
+                    checked={selectedAgents.includes(ag)}
+                    onChange={() => toggleAgent(ag)}
+                    className="w-3.5 h-3.5 text-indigo-600 rounded"
+                  />
+                  <span>🎖️ {ag}</span>
                 </label>
               ))}
             </div>
@@ -311,7 +408,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
             <thead className="bg-slate-900 text-slate-200 uppercase font-semibold text-[11px] sticky top-0 whitespace-nowrap">
               <tr>
                 <th className="p-3">Cliente Titular</th>
-                <th className="p-3">Vendedor</th>
+                <th className="p-3">Vendedor / Agente</th>
                 <th className="p-3">Compañía</th>
                 {displayMonths.map(m => (
                   <th key={m} className="p-2 text-center">{m.substring(0, 3)}</th>
@@ -337,8 +434,17 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                         {c.nombre}
                       </td>
 
-                      <td className="p-3 font-bold text-amber-800 whitespace-nowrap">
-                        👤 {c.vendedor || 'General'}
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="font-bold text-amber-800 flex items-center gap-1">
+                          <span>👤</span>
+                          <span>{c.vendedor || 'General'}</span>
+                        </div>
+                        {c.agente && (
+                          <div className="text-[10px] font-semibold text-indigo-700 mt-0.5 flex items-center gap-1">
+                            <span>🎖️</span>
+                            <span>{c.agente}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-3 whitespace-nowrap">

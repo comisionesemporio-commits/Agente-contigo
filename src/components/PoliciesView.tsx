@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { ClientPolicy } from '../types';
+import React, { useState, useMemo } from 'react';
+import { ClientPolicy, Agent } from '../types';
 import {
   Users, CheckCircle2, XCircle, ShieldAlert, DollarSign,
   Search, RotateCcw, Filter, ChevronDown, Edit, Lock, Unlock,
-  CreditCard, Calendar, Phone, MapPin, Building, Gift
+  CreditCard, Calendar, Phone, MapPin, Building, Gift, ShieldCheck
 } from 'lucide-react';
 import { MONTHS_LIST } from '../services/storage';
 
@@ -55,6 +55,7 @@ export function getClientBirthMonth(dbo?: string): number | null {
 
 interface PoliciesViewProps {
   clients: ClientPolicy[];
+  agents?: Agent[];
   selectedYear: string;
   customSellers: string[];
   customCarriers: string[];
@@ -67,6 +68,7 @@ interface PoliciesViewProps {
 
 export const PoliciesView: React.FC<PoliciesViewProps> = ({
   clients,
+  agents,
   selectedYear,
   customSellers,
   customCarriers,
@@ -79,15 +81,38 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
   const [filterSeller, setFilterSeller] = useState<string[]>([]);
+  const [filterAgent, setFilterAgent] = useState<string[]>([]);
   const [filterState, setFilterState] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCarrier, setFilterCarrier] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
   const [filterBirthMonth, setFilterBirthMonth] = useState('');
   const [showSellerMenu, setShowSellerMenu] = useState(false);
+  const [showAgentMenu, setShowAgentMenu] = useState(false);
 
   // Filter clients by active year
   const yearClients = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
+
+  // Dynamic available agents list
+  const availableAgents = useMemo(() => {
+    const set = new Set<string>();
+    if (agents) {
+      agents.forEach(a => {
+        const full = `${a.nombre} ${a.apellido || ''}`.trim();
+        if (full) set.add(full);
+      });
+    }
+    yearClients.forEach(c => {
+      if (c.agente && c.agente.trim()) set.add(c.agente.trim());
+    });
+    if (set.size === 0) {
+      set.add("Virginia García");
+      set.add("Junior Pérez");
+      set.add("Carlos Mendoza");
+      set.add("Dani Rodríguez");
+    }
+    return Array.from(set).sort();
+  }, [agents, yearClients]);
 
   // Unique US states in current list
   const uniqueStates = Array.from(new Set(yearClients.map(c => (c.estadoUSA || 'GA').trim().toUpperCase()))).filter(Boolean).sort();
@@ -100,6 +125,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
         (c.nombrePlan || '').toLowerCase().includes(q) ||
         (c.ssn || '').includes(q) ||
         (c.vendedor || '').toLowerCase().includes(q) ||
+        (c.agente || '').toLowerCase().includes(q) ||
         (c.numPoliza || '').toLowerCase().includes(q) ||
         (c.telefono || '').includes(q) ||
         (c.bancoNombre || '').toLowerCase().includes(q);
@@ -108,6 +134,16 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
 
     if (filterSeller.length > 0 && !filterSeller.includes((c.vendedor || 'General').trim())) {
       return false;
+    }
+
+    if (filterAgent.length > 0) {
+      const clientAgent = (c.agente || c.vendedor || 'General').trim();
+      const match = filterAgent.some(ag =>
+        ag.toLowerCase() === clientAgent.toLowerCase() ||
+        clientAgent.toLowerCase().includes(ag.toLowerCase()) ||
+        ag.toLowerCase().includes(clientAgent.toLowerCase())
+      );
+      if (!match) return false;
     }
 
     if (filterState && (c.estadoUSA || '').toUpperCase() !== filterState.toUpperCase()) {
@@ -153,6 +189,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     setSearchTerm('');
     setFilterPayment('');
     setFilterSeller([]);
+    setFilterAgent([]);
     setFilterState('');
     setFilterStatus('');
     setFilterCarrier('');
@@ -165,6 +202,14 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       setFilterSeller(filterSeller.filter(s => s !== sellerName));
     } else {
       setFilterSeller([...filterSeller, sellerName]);
+    }
+  };
+
+  const toggleAgentSelect = (agentName: string) => {
+    if (filterAgent.includes(agentName)) {
+      setFilterAgent(filterAgent.filter(a => a !== agentName));
+    } else {
+      setFilterAgent([...filterAgent, agentName]);
     }
   };
 
@@ -211,7 +256,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
         </div>
 
         {/* Filters Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 text-xs">
           {/* Search Input */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
@@ -228,12 +273,12 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
           <div className="relative">
             <button
               type="button"
-              onClick={() => setShowSellerMenu(!showSellerMenu)}
+              onClick={() => { setShowSellerMenu(!showSellerMenu); setShowAgentMenu(false); }}
               className="w-full py-2 px-3 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-white flex items-center justify-between focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             >
               <span className="truncate">
                 {filterSeller.length === 0
-                  ? '👤 Todos los Vendedores'
+                  ? '👤 Vendedores: Todos'
                   : filterSeller.length === 1
                   ? `👤 ${filterSeller[0]}`
                   : `👥 ${filterSeller.length} Vendedores`}
@@ -262,6 +307,50 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                       className="w-3.5 h-3.5 text-emerald-600 rounded"
                     />
                     <span>👤 {v}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Agent Multi-select Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => { setShowAgentMenu(!showAgentMenu); setShowSellerMenu(false); }}
+              className="w-full py-2 px-3 border border-indigo-200 rounded-lg text-xs font-bold text-indigo-950 bg-indigo-50/60 hover:bg-indigo-50 flex items-center justify-between focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            >
+              <span className="truncate">
+                {filterAgent.length === 0
+                  ? '🎖️ Agentes: Todos'
+                  : filterAgent.length === 1
+                  ? `🎖️ ${filterAgent[0]}`
+                  : `👥 ${filterAgent.length} Agentes`}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-indigo-500 ml-1 shrink-0" />
+            </button>
+
+            {showAgentMenu && (
+              <div className="absolute z-40 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl p-2 space-y-1 max-h-56 overflow-y-auto text-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1 px-1">
+                  <span className="font-extrabold text-[10px] text-indigo-600 uppercase">Agentes con Licencia</span>
+                  <button
+                    type="button"
+                    onClick={() => { setFilterAgent([]); setShowAgentMenu(false); }}
+                    className="text-[10px] text-indigo-600 font-bold hover:underline"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+                {availableAgents.map(ag => (
+                  <label key={ag} className="flex items-center space-x-2 px-1 py-1 hover:bg-indigo-50/60 rounded cursor-pointer text-slate-800 font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={filterAgent.includes(ag)}
+                      onChange={() => toggleAgentSelect(ag)}
+                      className="w-3.5 h-3.5 text-indigo-600 rounded"
+                    />
+                    <span>🎖️ {ag}</span>
                   </label>
                 ))}
               </div>
@@ -361,7 +450,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                 <th className="p-3">Miembros</th>
                 <th className="p-3">Social</th>
                 <th className="p-3">Teléfono / Contacto</th>
-                <th className="p-3">Vendedor</th>
+                <th className="p-3">Vendedor / Agente</th>
                 <th className="p-3">Método / Banco</th>
                 <th className="p-3">Activo desde</th>
                 <th className="p-3">Ingreso ($)</th>
@@ -469,8 +558,17 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </div>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap font-bold text-amber-800">
-                        👤 {c.vendedor || 'General'}
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="font-bold text-amber-800 flex items-center gap-1">
+                          <span>👤</span>
+                          <span>{c.vendedor || 'General'}</span>
+                        </div>
+                        {c.agente && (
+                          <div className="text-[10px] font-semibold text-indigo-700 mt-0.5 flex items-center gap-1">
+                            <span>🎖️</span>
+                            <span>{c.agente}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td className="p-3 whitespace-nowrap font-semibold text-slate-700 text-[10px]">

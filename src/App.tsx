@@ -533,9 +533,9 @@ export default function App() {
 
   // CSV Export
   const exportToCSV = () => {
-    let csv = "ID,Vendedor,numPoliza,Nombres,Estatus,Carrier,Plan,Peso,Altura,Banco,TipoCuenta,Titular,Routing,Cuenta,ActivoDesde,Ingreso,Prima,Telefono,Social,DBO,Edad,Direccion,createdYear\n";
+    let csv = "ID,Vendedor,Agente,numPoliza,Nombres,Estatus,Carrier,Plan,Peso,Altura,Banco,TipoCuenta,Titular,Routing,Cuenta,ActivoDesde,Ingreso,Prima,Telefono,Social,DBO,Edad,Direccion,createdYear\n";
     clients.forEach(c => {
-      csv += `"${c.id}","${c.vendedor || ''}","${c.numPoliza || ''}","${c.nombre || ''}","${c.estatus || ''}","${c.carrier || ''}","${c.nombrePlan || ''}","${c.peso || ''}","${c.altura || ''}","${c.bancoNombre || ''}","${c.bancoTipoCuenta || ''}","${c.bancoTitular || ''}","${c.bancoRouting || ''}","${c.bancoCuenta || ''}","${c.mesIngreso || ''}",${c.ingresoMonto || 0},${c.primaMonto || 0},"${c.telefono || ''}","${c.ssn || ''}","${c.dbo || ''}",${c.edad || 0},"${c.direccion || ''}","${c.createdYear || ''}"\n`;
+      csv += `"${c.id}","${c.vendedor || ''}","${c.agente || ''}","${c.numPoliza || ''}","${c.nombre || ''}","${c.estatus || ''}","${c.carrier || ''}","${c.nombrePlan || ''}","${c.peso || ''}","${c.altura || ''}","${c.bancoNombre || ''}","${c.bancoTipoCuenta || ''}","${c.bancoTitular || ''}","${c.bancoRouting || ''}","${c.bancoCuenta || ''}","${c.mesIngreso || ''}",${c.ingresoMonto || 0},${c.primaMonto || 0},"${c.telefono || ''}","${c.ssn || ''}","${c.dbo || ''}",${c.edad || 0},"${c.direccion || ''}","${c.createdYear || ''}"\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -1191,6 +1191,7 @@ export default function App() {
             {activeTab === 'polizas' && (
               <PoliciesView
                 clients={clients}
+                agents={agents}
                 selectedYear={selectedYear}
                 customSellers={customSellers}
                 customCarriers={customCarriers}
@@ -1221,6 +1222,7 @@ export default function App() {
             {activeTab === 'comisiones' && (
               <CommissionsView
                 clients={clients}
+                agents={agents}
                 selectedYear={selectedYear}
                 customCarriers={customCarriers}
                 customSellers={customSellers}
@@ -1339,6 +1341,7 @@ export default function App() {
         customCarriers={customCarriers}
         customStatuses={customStatuses}
         customSellers={customSellers}
+        agents={agents}
         onClose={() => {
           setIsClientModalOpen(false);
           setEditingClient(null);

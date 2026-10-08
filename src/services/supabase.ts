@@ -105,7 +105,8 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     primaMonto: client.primaMonto || 0,
     pagoRealizado: client.pagoRealizado || 'TRUE',
     docStatus: client.docStatus || 'Documento Completos',
-    estatusMigratorio: client.estatusMigratorio || 'Ciudadano'
+    estatusMigratorio: client.estatusMigratorio || 'Ciudadano',
+    agente: client.agente || ''
   };
 
   const row: Record<string, any> = {
@@ -163,6 +164,7 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
     primaMonto: parseFloat(row.primaMonto || extraData.primaMonto) || 0,
     notas: row.notas || row.nota || '',
     vendedor: row.vendedor || 'General',
+    agente: row.agente || extraData.agente || row.vendedor || 'General',
     carrier: row.carrier || row.aseguradora || 'Oscar',
     numPoliza: row.numPoliza || row.num_poliza || '',
     createdDate: row.createdDate || row.created_at || '',

@@ -190,6 +190,7 @@ export const INITIAL_CLIENTS: ClientPolicy[] = [
   {
     id: "client-1",
     vendedor: "Virginia",
+    agente: "Virginia García",
     numPoliza: "POL-00129",
     nombre: "Verónica Pérez",
     estatus: "Activo",
@@ -236,6 +237,7 @@ export const INITIAL_CLIENTS: ClientPolicy[] = [
   {
     id: "client-2",
     vendedor: "Junior",
+    agente: "Junior Pérez",
     numPoliza: "POL-00248",
     nombre: "Manuel Alejandro Gómez",
     estatus: "Activo",
@@ -279,6 +281,7 @@ export const INITIAL_CLIENTS: ClientPolicy[] = [
   {
     id: "client-3",
     vendedor: "Carlos Mendoza",
+    agente: "Carlos Mendoza",
     numPoliza: "POL-00391",
     nombre: "Adriana Lucía Morales",
     estatus: "Nuevo",

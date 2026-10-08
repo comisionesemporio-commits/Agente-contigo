@@ -22,6 +22,7 @@ export interface CommissionItem {
 export interface ClientPolicy {
   id: string;
   vendedor: string;
+  agente?: string;
   numPoliza: string;
   nombre: string;
   estatus: string;
