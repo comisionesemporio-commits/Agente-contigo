@@ -4,7 +4,7 @@ import {
   Send, Copy, CheckCircle2, MessageSquare, Plus,
   FileCheck, Shield, HeartPulse, User, Phone, MapPin, Building
 } from 'lucide-react';
-import { MONTHS_LIST } from '../services/storage';
+import { MONTHS_LIST, formatToUSDate, formatToISODate, calculateAgeFromDBO, formatDateToHumanSpanish } from '../services/storage';
 
 interface SalesPortalViewProps {
   currentSeller: string;
@@ -76,17 +76,14 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
   // Calculate age automatically when DBO changes
   const handleDboChange = (val: string) => {
     setDbo(val);
-    if (!val) return;
-    try {
-      const birthDate = new Date(val);
-      if (!isNaN(birthDate.getTime())) {
-        const today = new Date();
-        let calcAge = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) calcAge--;
-        if (calcAge >= 0) setEdad(calcAge);
-      }
-    } catch (e) {}
+    if (!val) {
+      setEdad(0);
+      return;
+    }
+    const calcAge = calculateAgeFromDBO(val);
+    if (calcAge > 0) {
+      setEdad(calcAge);
+    }
   };
 
   const handleHealthRadio = (field: string, val: string) => {
@@ -102,6 +99,9 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
     const day = String(now.getDate()).padStart(2, '0');
     const year = String(now.getFullYear());
     const dateUS = `${month}/${day}/${year}`;
+
+    const usDbo = formatToUSDate(dbo);
+    const finalAge = edad || calculateAgeFromDBO(usDbo);
 
     onSaveNewPolicy({
       vendedor: currentSeller || 'Vendedor General',
@@ -129,8 +129,8 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
       telefono: telefono.trim(),
       email: email.trim(),
       ssn: ssn.trim(),
-      dbo,
-      edad,
+      dbo: usDbo,
+      edad: finalAge,
       direccion: direccion.trim(),
       numDependientes: parseInt(numDependientes) || 0,
       datosDependientes: datosDependientes.trim(),
@@ -308,13 +308,44 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
           {/* DBO & Automatic Age Calculation */}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block font-bold text-slate-700 uppercase mb-1">Fecha de Nacimiento (D.B.O)</label>
-              <input
-                type="date"
-                value={dbo}
-                onChange={e => handleDboChange(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold"
-              />
+              <label className="block font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                <span>Fecha de Nacimiento (D.B.O)</span>
+                <span className="text-[10px] text-emerald-700 font-extrabold normal-case">Formato EE.UU: MM/DD/YYYY</span>
+              </label>
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={dbo}
+                  onChange={e => handleDboChange(e.target.value)}
+                  onBlur={() => {
+                    if (dbo.trim()) {
+                      const normalized = formatToUSDate(dbo);
+                      handleDboChange(normalized);
+                    }
+                  }}
+                  placeholder="MM/DD/YYYY (ej. 05/14/1984)"
+                  maxLength={10}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 pr-10 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold bg-white text-slate-900"
+                />
+                <input
+                  type="date"
+                  tabIndex={-1}
+                  value={formatToISODate(dbo)}
+                  onChange={e => {
+                    if (e.target.value) {
+                      const us = formatToUSDate(e.target.value);
+                      handleDboChange(us);
+                    }
+                  }}
+                  className="absolute right-2 w-6 h-6 opacity-60 hover:opacity-100 cursor-pointer border-none bg-transparent"
+                  title="Seleccionar en calendario"
+                />
+              </div>
+              {dbo && (
+                <div className="mt-1 text-[11px] text-emerald-900 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 truncate">
+                  📅 {formatDateToHumanSpanish(dbo)}
+                </div>
+              )}
             </div>
             <div>
               <label className="block font-bold text-slate-700 uppercase mb-1">Edad (Cálculo Automático)</label>
@@ -325,6 +356,9 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
                 placeholder="Calculado automáticamente..."
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-black bg-emerald-50 text-emerald-900"
               />
+              <span className="block text-[10px] text-slate-500 mt-1 font-medium">
+                Cálculo automático según fecha de nacimiento.
+              </span>
             </div>
           </div>
 

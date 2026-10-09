@@ -1,6 +1,9 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ClientPolicy } from '../types';
-import { DEFAULT_SUPABASE_KEY, DEFAULT_SUPABASE_URL } from './storage';
+import {
+  DEFAULT_SUPABASE_KEY, DEFAULT_SUPABASE_URL,
+  formatToUSDate, formatToISODate, formatDateToHumanSpanish, calculateAgeFromDBO
+} from './storage';
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -87,7 +90,22 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     lastName = fullName.substring(spaceIdx + 1);
   }
 
+  // Normalizar fechas a formato de Estados Unidos (Mes / Día / Año -> MM/DD/YYYY)
+  const usDbo = formatToUSDate(client.dbo);
+  const usIngresoFecha = formatToUSDate(client.ingresoFecha);
+  const usCreatedDate = formatToUSDate(client.createdDate);
+  const calculatedAge = client.edad || calculateAgeFromDBO(usDbo);
+
   const extraData = {
+    dbo: usDbo,
+    dbo_iso: formatToISODate(usDbo),
+    dbo_human: formatDateToHumanSpanish(usDbo),
+    edad: calculatedAge,
+    email: client.email || '',
+    ingresoFecha: usIngresoFecha,
+    createdDate: usCreatedDate,
+    carrier: client.carrier || 'Oscar',
+    numPoliza: client.numPoliza || '',
     nombrePlan: client.nombrePlan || '',
     peso: client.peso || '',
     altura: client.altura || '',
@@ -106,15 +124,19 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     pagoRealizado: client.pagoRealizado || 'TRUE',
     docStatus: client.docStatus || 'Documento Completos',
     estatusMigratorio: client.estatusMigratorio || 'Ciudadano',
-    agente: client.agente || ''
+    agente: client.agente || client.vendedor || 'General'
   };
 
+  // El id siempre debe enviarse para que Supabase guarde o actualice la fila correctamente
+  const recordId = String(client.id || ('client-' + Date.now())).trim();
+
   const row: Record<string, any> = {
+    id: recordId,
     nombre: firstName,
     apellido: lastName,
     telefono: client.telefono || '',
     ssn: client.ssn || '',
-    estado: client.estadoUSA || 'GA',
+    estado: (client.estadoUSA || 'GA').toUpperCase(),
     vendedor: client.vendedor || 'General',
     estatus: client.estatus || 'Activo',
     anio: parseInt(client.createdYear || "2026") || 2026,
@@ -122,10 +144,6 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     metodo_pago: client.metodoPago || 'Tarjeta de Crédito',
     enfermedades: JSON.stringify(extraData)
   };
-
-  if (client.id && !String(client.id).startsWith('client-')) {
-    row.id = client.id;
-  }
 
   return row;
 }
@@ -141,6 +159,10 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
     extraData = {};
   }
 
+  const rawDbo = row.dbo || extraData.dbo || '';
+  const usDbo = formatToUSDate(rawDbo);
+  const calculatedAge = parseInt(row.edad || extraData.edad) || calculateAgeFromDBO(usDbo);
+
   return {
     id: row.id ? String(row.id) : ("client-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4)),
     nombre: fullName,
@@ -153,21 +175,21 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
     docStatus: row.docStatus || row.documento || extraData.docStatus || 'Documento Completos',
     estatusMigratorio: row.estatusMigratorio || extraData.estatusMigratorio || 'Ciudadano',
     telefono: row.telefono || '',
-    email: row.email || row.correo || '',
+    email: row.email || row.correo || extraData.email || '',
     direccion: row.direccion || '',
-    dbo: row.dbo || '',
-    edad: parseInt(row.edad) || 0,
+    dbo: usDbo,
+    edad: calculatedAge,
     metodoPago: row.metodoPago || row.metodo_pago || 'Tarjeta de Crédito',
     pagoRealizado: String(row.pagoRealizado || row.pago_realizado || extraData.pagoRealizado || 'TRUE'),
-    ingresoFecha: row.ingresoFecha || row.ingreso || row.created_at || '',
+    ingresoFecha: formatToUSDate(row.ingresoFecha || row.ingreso || extraData.ingresoFecha || row.created_at || ''),
     ingresoMonto: parseFloat(row.ingresoMonto || extraData.ingresoMonto) || 0,
     primaMonto: parseFloat(row.primaMonto || extraData.primaMonto) || 0,
     notas: row.notas || row.nota || '',
     vendedor: row.vendedor || 'General',
     agente: row.agente || extraData.agente || row.vendedor || 'General',
-    carrier: row.carrier || row.aseguradora || 'Oscar',
-    numPoliza: row.numPoliza || row.num_poliza || '',
-    createdDate: row.createdDate || row.created_at || '',
+    carrier: row.carrier || row.aseguradora || extraData.carrier || 'Oscar',
+    numPoliza: row.numPoliza || row.num_poliza || extraData.numPoliza || '',
+    createdDate: formatToUSDate(row.createdDate || extraData.createdDate || row.created_at || ''),
     createdYear: String(row.anio || row.createdYear || defaultYear),
     nombrePlan: extraData.nombrePlan || row.nombrePlan || '',
     peso: extraData.peso || row.peso || '',

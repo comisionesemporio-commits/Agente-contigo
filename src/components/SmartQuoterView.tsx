@@ -4,7 +4,7 @@ import {
   Sparkles, Upload, Copy, Printer, Save, CheckCircle2,
   AlertCircle, Search, Plus, Trash2, Globe, FileText,
   DollarSign, Shield, HeartPulse, Building, User, Key,
-  ChevronDown, ExternalLink, RefreshCw
+  ChevronDown, ExternalLink, RefreshCw, Eye, X
 } from 'lucide-react';
 import {
   getGeminiApiKey, setGeminiApiKey, loadQuotes, saveQuotes
@@ -63,6 +63,15 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
 
   // Saved Quotes
   const [savedQuotesList, setSavedQuotesList] = useState<SavedQuote[]>(loadQuotes);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+
+  const handlePrintProposal = () => {
+    document.body.classList.add('is-printing-proposal');
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('is-printing-proposal');
+    }, 1000);
+  };
 
   // Listen for paste (Ctrl+V / Cmd+V) to easily paste screenshots
   useEffect(() => {
@@ -504,7 +513,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
   return (
     <div className="space-y-6">
       {/* Top Banner & Fast Actions */}
-      <div className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-teal-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div id="quoterTopBanner" className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-teal-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print quoter-edit-section">
         <div>
           <span className="px-3 py-1 bg-teal-500/20 text-teal-300 border border-teal-500/30 rounded-full text-[10px] font-black uppercase tracking-wider inline-block mb-2">
             Módulo Oficial de Cotización
@@ -547,8 +556,19 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
 
           <button
             type="button"
-            onClick={() => window.print()}
-            className="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+            onClick={() => setShowPrintModal(true)}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl font-bold transition flex items-center gap-1.5 border border-cyan-800 shadow cursor-pointer"
+            title="Ver vista previa limpia de la cotización que se imprimirá"
+          >
+            <Eye className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Vista Previa</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrintProposal}
+            className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white rounded-xl font-extrabold transition flex items-center gap-1.5 shadow-lg cursor-pointer"
+            title="Imprimir únicamente la cotización resumida en PDF"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Imprimir / PDF</span>
@@ -566,9 +586,9 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
       </div>
 
       {/* Grid: Prospect Data & Image OCR */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 no-print">
+      <div id="quoterProspectAndUploadGrid" className="grid grid-cols-1 lg:grid-cols-12 gap-5 no-print quoter-edit-section">
         {/* Panel 1: Datos del Prospecto */}
-        <div className="lg:col-span-4 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div id="quoterProspectPanel" className="lg:col-span-4 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <div className="w-7 h-7 rounded-xl bg-cyan-100/70 text-[#00c9b7] flex items-center justify-center font-bold text-xs">
               1
@@ -642,7 +662,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
         </div>
 
         {/* Panel 2: Subida Inteligente & Visión IA */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div id="quoterUploadOcrPanel" className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-xl bg-blue-100/70 text-[#008be3] flex items-center justify-center font-bold text-xs">
@@ -761,7 +781,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
       </div>
 
       {/* Panel 3: Planes a Presentar al Cliente Editor */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
+      <div id="quoterPlanEditorPanel" className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
         <div className="flex items-center justify-between pb-2 border-b border-slate-100">
           <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#00c9b7]"></span>
@@ -1012,7 +1032,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
             {plans.map((plan, idx) => (
               <div
                 key={plan.id}
-                className={`relative rounded-3xl border overflow-hidden flex flex-col justify-between transition-all ${
+                className={`relative rounded-3xl border overflow-hidden flex flex-col justify-between transition-all print-avoid-break ${
                   plan.isRecommended
                     ? 'border-[#00c9b7] ring-2 ring-[#00c9b7]/30 shadow-lg bg-white'
                     : 'border-slate-200 shadow-sm bg-white'
@@ -1107,7 +1127,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
           </div>
 
           {/* Resumen Mensual Combinado */}
-          <div className="mt-8 p-5 rounded-2xl bg-gradient-to-r from-teal-50 to-sky-50 border border-[#00c9b7]/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="mt-8 p-5 rounded-2xl bg-gradient-to-r from-teal-50 to-sky-50 border border-[#00c9b7]/30 flex flex-col sm:flex-row items-center justify-between gap-4 print-avoid-break">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white flex items-center justify-center font-black">
                 ✓
@@ -1126,7 +1146,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
           </div>
 
           {/* Beneficios de Marca Agente Contigo */}
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs print-avoid-break">
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2.5">
               <div className="w-6 h-6 rounded-lg bg-teal-100 text-[#00c9b7] flex items-center justify-center font-bold shrink-0">
                 ✦
@@ -1168,9 +1188,44 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
         </div>
       </div>
 
+      {/* Barra de Acciones del Formato de Cotización */}
+      <div className="bg-gradient-to-r from-teal-50 via-white to-sky-50 p-4 sm:p-5 rounded-2xl border border-teal-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print quoter-edit-section">
+        <div className="flex items-center gap-3 text-xs">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white flex items-center justify-center font-bold shadow-sm">
+            <Printer className="w-5 h-5" />
+          </div>
+          <div>
+            <strong className="text-slate-900 block text-sm font-black">
+              Formato Oficial de Cotización Listo para Imprimir
+            </strong>
+            <span className="text-slate-600 text-xs">
+              Se generará únicamente el documento para <strong className="text-[#008be3]">{clientName}</strong>, sin capturas, menús ni botones.
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setShowPrintModal(true)}
+            className="flex-1 sm:flex-none px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <Eye className="w-4 h-4 text-slate-500" />
+            <span>Vista Previa</span>
+          </button>
+          <button
+            type="button"
+            onClick={handlePrintProposal}
+            className="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Imprimir Formato / Guardar como PDF</span>
+          </button>
+        </div>
+      </div>
+
       {/* Historial de Cotizaciones Guardadas */}
       {savedQuotesList.length > 0 && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
+        <div id="quoterHistoryPanel" className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
             <div>
               <h3 className="text-xs font-black uppercase text-slate-800 flex items-center gap-2">
@@ -1303,6 +1358,195 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
               >
                 Guardar y Conectar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Vista Previa Oficial (Limpio para Impresión / PDF) */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto flex items-center justify-center no-print">
+          <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-white flex items-center gap-2">
+                    Formato Oficial de Cotización Resumida
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Cliente: <strong className="text-teal-300">{clientName}</strong> • {plans.length} {plans.length === 1 ? 'plan seleccionado' : 'planes seleccionados'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPrintModal(false);
+                    setTimeout(handlePrintProposal, 250);
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs flex items-center gap-2 shadow cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Imprimir / PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPrintModal(false)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Banner Informativo */}
+            <div className="bg-emerald-50 px-6 py-2.5 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between shrink-0 font-medium">
+              <span>✓ Este documento contiene exclusivamente el resumen de cotizaciones para el cliente, listo para entregar o imprimir en PDF.</span>
+              <span className="font-bold text-emerald-800">Año {quoteYear}</span>
+            </div>
+
+            {/* Visualización del formato limpio */}
+            <div className="p-4 sm:p-8 bg-slate-100 overflow-y-auto flex-1">
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden max-w-4xl mx-auto">
+                {/* Header de la Propuesta */}
+                <div className="pt-8 pb-6 px-6 text-center bg-gradient-to-b from-cyan-50/60 via-white to-white border-b border-slate-100">
+                  <div className="flex items-center justify-center gap-3 mb-2">
+                    <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
+                      <circle cx="58" cy="27" r="13" fill="#008be3" />
+                      <circle cx="43" cy="33" r="10" fill="#00c9b7" />
+                      <path d="M42 42C29 44 24 55 24 67C24 81 37 90 53 90C67 90 77 82 77 69C77 56 69 49 61 47C56 52 50 56 42 42Z" fill="#00c9b7" fillOpacity="0.85" />
+                      <path d="M53 45C63 46 72 52 74 65C70 76 60 83 48 83C36 83 31 75 31 69C31 60 41 51 53 45Z" fill="#008be3" />
+                    </svg>
+                    <span className="text-2xl font-black text-[#00c9b7]">
+                      Agente<span className="text-[#008be3]">Contigo</span>
+                    </span>
+                  </div>
+
+                  <div className="inline-block bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white px-8 py-2 rounded-2xl shadow-sm mb-2">
+                    <h2 className="text-lg sm:text-xl font-black uppercase text-white tracking-wide">
+                      PROPUESTA PERSONALIZADA DE SEGURO MÉDICO
+                    </h2>
+                  </div>
+
+                  <p className="text-xs font-bold text-slate-500">
+                    Cobertura y Beneficios Seleccionados • Período <span className="text-[#008be3]">{quoteYear}</span>
+                  </p>
+
+                  <div className="max-w-2xl mx-auto mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 rounded-2xl p-3 border border-slate-200 text-left text-xs">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Cliente</span>
+                      <strong className="text-slate-900 text-sm block truncate">{clientName}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Ubicación</span>
+                      <strong className="text-slate-700 block truncate">{clientLocation}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Integrantes</span>
+                      <strong className="text-slate-700 block">{clientMembers}</strong>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Asesor</span>
+                      <strong className="text-[#008be3] block truncate">{agentName}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tarjetas de Planes */}
+                <div className="p-6 space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {plans.map((p) => (
+                      <div
+                        key={p.id}
+                        className={`rounded-2xl border p-4 flex flex-col justify-between ${
+                          p.isRecommended
+                            ? 'border-[#00c9b7] ring-2 ring-[#00c9b7]/30 bg-white'
+                            : 'border-slate-200 bg-white'
+                        }`}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-[11px] font-black uppercase">
+                            <span className="text-[#008be3]">{p.company}</span>
+                            <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{p.tier}</span>
+                          </div>
+
+                          <h3 className="font-black text-slate-900 text-sm">{p.planName}</h3>
+
+                          <div className="p-3 bg-cyan-50/60 rounded-xl flex items-baseline justify-between">
+                            <span className="text-xs font-semibold text-slate-600">Prima Mensual:</span>
+                            <span className="text-2xl font-black text-[#008be3]">${p.premium}/mes</span>
+                          </div>
+
+                          <div className="space-y-1.5 text-xs text-slate-600">
+                            <div className="flex justify-between border-b border-slate-100 py-1">
+                              <span>Deducible Anual:</span>
+                              <strong className="text-slate-900">{p.deductible}</strong>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-100 py-1">
+                              <span>Máx. de Bolsillo:</span>
+                              <strong className="text-slate-900">{p.moop}</strong>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-100 py-1">
+                              <span>Médico Primario:</span>
+                              <strong className="text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">{p.primaryCare}</strong>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-100 py-1">
+                              <span>Especialista:</span>
+                              <strong className="text-slate-900">{p.specialist}</strong>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-100 py-1">
+                              <span>Medicamentos Genéricos:</span>
+                              <strong className="text-slate-900">{p.genericRx}</strong>
+                            </div>
+                            <div className="flex justify-between py-1">
+                              <span>Urgencias:</span>
+                              <strong className="text-slate-900">{p.urgencies}</strong>
+                            </div>
+                          </div>
+
+                          {p.clientSummary && (
+                            <div className="p-2.5 rounded-xl bg-cyan-50/80 border border-cyan-100 text-[11px] text-slate-700">
+                              <span className="font-bold text-[#008be3] block mb-0.5">💡 Beneficio para ti:</span>
+                              <p>{p.clientSummary}</p>
+                            </div>
+                          )}
+
+                          {p.extraBenefit && (
+                            <div className="text-[11px] text-slate-500 flex items-start gap-1">
+                              <span className="text-teal-600 font-bold">✓</span>
+                              <span>{p.extraBenefit}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-4 pt-2 border-t border-slate-100 text-center text-[10px] font-bold text-slate-400 uppercase">
+                          {p.isRecommended ? '★ Plan Recomendado' : 'Opción Disponible'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Resumen Total */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50 to-sky-50 border border-teal-200 flex items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm">Total Mensual Estimado</h4>
+                      <p className="text-xs text-slate-500">Subsidio gubernamental aplicado</p>
+                    </div>
+                    <span className="text-3xl font-black text-[#008be3]">${totalMonthly.toFixed(2)}/mes</span>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-slate-50 border-t border-slate-100 text-center text-xs text-slate-500">
+                  <span className="font-bold text-[#008be3]">Agente Contigo • Juntos Cuidamos Tu Bienestar</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>

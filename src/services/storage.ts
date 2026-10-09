@@ -147,6 +147,185 @@ export function getCurrentFormattedDateAndYear() {
   return { dateUS: `${month}/${day}/${year}`, year: year };
 }
 
+/**
+ * Normaliza cualquier formato de fecha a formato estándar de EE.UU.: MM/DD/YYYY (Mes/Día/Año)
+ * Maneja inteligentemente:
+ * - Fechas escritas en formato Día/Mes/Año (ej: 25/08/1990 o 14/05/1985 -> 08/25/1990, 05/14/1985)
+ * - Fechas ISO YYYY-MM-DD o YYYY/MM/DD (ej: 1985-05-14 -> 05/14/1985)
+ * - Separadores variados: /, -, ., espacios
+ * - Años de 2 dígitos (ej: 85 -> 1985)
+ * - Nombres de meses en español o inglés ("14 de mayo 1985")
+ */
+export function formatToUSDate(dateStr?: string, preferDayFirst = false): string {
+  if (!dateStr) return '';
+  let str = String(dateStr).trim();
+  if (!str) return '';
+
+  // Quitar comillas si vienen de CSV o texto copiado
+  str = str.replace(/^["']|["']$/g, '').trim();
+
+  // Caso 1: ISO YYYY-MM-DD o YYYY/MM/DD o YYYY.MM.DD
+  const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${m}/${d}/${y}`;
+  }
+
+  // Caso 2: Separado por / o - o . o espacio (ej: 25/08/1990 o 08/25/1990 o 14-05-1985 o 5/14/84)
+  const sepMatch = str.match(/^(\d{1,2})[-/.\s](\d{1,2})[-/.\s](\d{2,4})$/);
+  if (sepMatch) {
+    const p1 = parseInt(sepMatch[1], 10);
+    const p2 = parseInt(sepMatch[2], 10);
+    const rawYear = parseInt(sepMatch[3], 10);
+
+    // Año de 2 dígitos a 4 dígitos
+    let y = String(rawYear);
+    if (rawYear < 100) {
+      const currentYearTwoDigits = new Date().getFullYear() % 100;
+      y = String(rawYear <= (currentYearTwoDigits + 1) ? 2000 + rawYear : 1900 + rawYear);
+    }
+
+    let month = p1;
+    let day = p2;
+
+    // Inteligencia de formato:
+    // Si la primera parte es > 12 y la segunda es <= 12: Es 100% Día/Mes/Año (ej: 25/08/1990 o 14/05/1985)
+    if (p1 > 12 && p2 <= 12) {
+      day = p1;
+      month = p2;
+    }
+    // Si la segunda parte es > 12 y la primera es <= 12: Es 100% Mes/Día/Año (ej: 08/25/1990)
+    else if (p2 > 12 && p1 <= 12) {
+      month = p1;
+      day = p2;
+    }
+    // Si ambos son <= 12 (ej: 05/08/1990):
+    else if (preferDayFirst) {
+      day = p1;
+      month = p2;
+    } else {
+      // Por defecto en CRM estadounidense: Mes/Día/Año
+      month = p1;
+      day = p2;
+    }
+
+    // Validar límites razonables
+    if (month < 1) month = 1;
+    if (month > 12) month = 12;
+    if (day < 1) day = 1;
+    if (day > 31) day = 31;
+
+    const mStr = String(month).padStart(2, '0');
+    const dStr = String(day).padStart(2, '0');
+    return `${mStr}/${dStr}/${y}`;
+  }
+
+  // Caso 3: Parse textual (ej. "14 mayo 1985", "14 de mayo de 1985", "May 14 1985")
+  const spanishMonths: Record<string, string> = {
+    enero: '01', ene: '01', jan: '01', january: '01',
+    febrero: '02', feb: '02', february: '02',
+    marzo: '03', mar: '03', march: '03',
+    abril: '04', abr: '04', apr: '04', april: '04',
+    mayo: '05', may: '05',
+    junio: '06', jun: '06', june: '06',
+    julio: '07', jul: '07', july: '07',
+    agosto: '08', ago: '08', aug: '08', august: '08',
+    septiembre: '09', sep: '09', set: '09', september: '09',
+    octubre: '10', oct: '10', october: '10',
+    noviembre: '11', nov: '11', november: '11',
+    diciembre: '12', dic: '12', dec: '12', december: '12'
+  };
+
+  const textMatch = str.match(/(\d{1,2})\s*(?:de)?\s*([a-zA-ZáéíóúÁÉÍÓÚ]+)\s*(?:de|,)?\s*(\d{2,4})/i);
+  if (textMatch) {
+    const dNum = parseInt(textMatch[1], 10);
+    const mWord = textMatch[2].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const yNum = parseInt(textMatch[3], 10);
+    const monthNum = spanishMonths[mWord];
+    if (monthNum && dNum >= 1 && dNum <= 31) {
+      const yStr = yNum < 100 ? String(1900 + yNum) : String(yNum);
+      return `${monthNum}/${String(dNum).padStart(2, '0')}/${yStr}`;
+    }
+  }
+
+  // Caso 4: Objeto Date nativo
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    if (y >= 1900 && y <= 2100) {
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${m}/${d}/${y}`;
+    }
+  }
+
+  return str;
+}
+
+/**
+ * Convierte cualquier fecha a formato legible en español (ej: "14 de Mayo de 1985")
+ */
+export function formatDateToHumanSpanish(dateStr?: string): string {
+  if (!dateStr) return '';
+  const us = formatToUSDate(dateStr);
+  const match = us.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return dateStr;
+  const m = parseInt(match[1], 10);
+  const d = parseInt(match[2], 10);
+  const y = match[3];
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  const mName = monthNames[m - 1] || '';
+  return `${d} de ${mName} de ${y}`;
+}
+
+/**
+ * Convierte cualquier fecha a formato ISO YYYY-MM-DD (para inputs tipo date de HTML5 o Supabase)
+ */
+export function formatToISODate(dateStr?: string): string {
+  if (!dateStr) return '';
+  const str = String(dateStr).trim();
+  if (!str) return '';
+
+  // Ya es YYYY-MM-DD válido
+  const ymd = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return str;
+
+  // Normalizar primero a formato US y convertir
+  const us = formatToUSDate(str);
+  const match = us.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    return `${match[3]}-${match[1]}-${match[2]}`;
+  }
+
+  return '';
+}
+
+/**
+ * Calcula la edad de una persona dada su fecha de nacimiento en cualquier formato
+ */
+export function calculateAgeFromDBO(dboStr?: string): number {
+  if (!dboStr) return 0;
+  const iso = formatToISODate(dboStr);
+  if (!iso) return 0;
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  const birthDate = new Date(y, m - 1, d);
+  if (isNaN(birthDate.getTime())) return 0;
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age >= 0 ? age : 0;
+}
+
 export const INITIAL_AGENTS: Agent[] = [
   {
     id: 'ag-1',

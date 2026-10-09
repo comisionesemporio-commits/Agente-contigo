@@ -5,7 +5,7 @@ import {
 import {
   MONTHS_LIST, DEFAULT_SELLERS, DEFAULT_CARRIERS, DEFAULT_STATUSES,
   loadClients, saveClients, loadTasks, saveTasks, loadAgents, saveAgents,
-  loadCalendarEvents, saveCalendarEvents
+  loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO
 } from './services/storage';
 import {
   initSupabase, mapClientToSupabaseRow, mapSupabaseRowToClient, getSupabaseConfig
@@ -242,9 +242,15 @@ export default function App() {
     if (!sb) return;
     try {
       const payload = mapClientToSupabaseRow(client);
-      await sb.from('clientes').upsert([payload]);
-      setCloudStatus({ connected: true, message: 'Supabase Sincronizado' });
-    } catch (e) {
+      const { error } = await sb.from('clientes').upsert([payload]);
+      if (error) {
+        console.warn('Could not save single client to Supabase:', error);
+        showToast('Aviso Supabase', `No se pudo guardar en Supabase: ${error.message || 'Verifica la conexión'}`, 'error');
+        setCloudStatus({ connected: false, message: 'Error de Sincronización' });
+      } else {
+        setCloudStatus({ connected: true, message: 'Supabase Sincronizado' });
+      }
+    } catch (e: any) {
       console.warn('Could not save single client to Supabase:', e);
     }
   };
@@ -324,9 +330,15 @@ export default function App() {
   // Policies Handlers
   const handleSaveClient = (clientData: ClientPolicy | Omit<ClientPolicy, 'id'>) => {
     const clientId = ('id' in clientData && clientData.id) ? clientData.id : ('client-' + Date.now());
+    const usDbo = formatToUSDate(clientData.dbo);
+    const finalAge = clientData.edad || calculateAgeFromDBO(usDbo);
     const fullClient: ClientPolicy = {
       ...(clientData as ClientPolicy),
-      id: clientId
+      id: clientId,
+      dbo: usDbo,
+      edad: finalAge,
+      ingresoFecha: clientData.ingresoFecha ? formatToUSDate(clientData.ingresoFecha) : '',
+      createdDate: clientData.createdDate ? formatToUSDate(clientData.createdDate) : ''
     };
 
     const existingIdx = clients.findIndex(c => c.id === clientId);
@@ -651,7 +663,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col bg-slate-100">
       {/* Toast Banner */}
       {toast && (
-        <div className="fixed top-16 right-5 z-50 transition-all duration-300 max-w-sm w-full bg-slate-900 text-white p-4 rounded-xl shadow-2xl border border-slate-700 flex items-center space-x-3 pointer-events-auto">
+        <div className="fixed top-16 right-5 z-50 transition-all duration-300 max-w-sm w-full bg-slate-900 text-white p-4 rounded-xl shadow-2xl border border-slate-700 flex items-center space-x-3 pointer-events-auto no-print">
           <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
             {toast.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-400" />
@@ -672,14 +684,14 @@ export default function App() {
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 lg:hidden no-print"
         ></div>
       )}
 
       <div className="flex-1 flex min-h-screen w-full relative">
         {/* VERTICAL SIDEBAR */}
         <aside
-          className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col border-r border-slate-800 transition-transform duration-300 ease-in-out shadow-2xl lg:static lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col border-r border-slate-800 transition-transform duration-300 ease-in-out shadow-2xl lg:static lg:translate-x-0 no-print ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -1045,7 +1057,7 @@ export default function App() {
         {/* MAIN VIEWPORT */}
         <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
           {/* Header */}
-          <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between">
+          <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between no-print">
             <div className="flex items-center space-x-3">
               <button
                 type="button"
@@ -1106,7 +1118,7 @@ export default function App() {
           <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
             {/* KPI Banner Section (Only on Admin overview tabs) */}
             {currentRole === 'admin' && (activeTab === 'polizas' || activeTab === 'dashboard' || activeTab === 'kanban') && (
-              <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <section className="grid grid-cols-2 md:grid-cols-5 gap-4 no-print">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center space-x-3">
                   <div className="w-10 h-10 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center text-lg font-bold">
                     <Users className="w-5 h-5" />

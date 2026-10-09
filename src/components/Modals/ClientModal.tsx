@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { ClientPolicy, HealthQuestions, Agent } from '../../types';
 import {
   X, UserPen, RotateCw, Trash2, Save,
-  Building, Phone, MapPin, HeartPulse, User
+  Building, Phone, MapPin, HeartPulse, User, Calendar
 } from 'lucide-react';
-import { MONTHS_LIST } from '../../services/storage';
+import {
+  MONTHS_LIST, formatToUSDate, formatToISODate, formatDateToHumanSpanish,
+  calculateAgeFromDBO, getCurrentFormattedDateAndYear
+} from '../../services/storage';
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -37,8 +40,16 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
   useEffect(() => {
     if (client) {
-      setFormData({ ...client, agente: client.agente || client.vendedor || 'General' });
+      const usDbo = formatToUSDate(client.dbo);
+      const calculatedAge = client.edad || calculateAgeFromDBO(usDbo);
+      setFormData({
+        ...client,
+        dbo: usDbo,
+        edad: calculatedAge,
+        agente: client.agente || client.vendedor || 'General'
+      });
     } else {
+      const todayUS = getCurrentFormattedDateAndYear().dateUS;
       setFormData({
         id: '',
         nombre: '',
@@ -63,7 +74,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
         mesIngreso: 'Enero',
         docStatus: 'Documento Completos',
         estatusMigratorio: 'Ciudadano',
-        ingresoFecha: '',
+        ingresoFecha: todayUS,
+        createdDate: todayUS,
         ingresoMonto: 0,
         primaMonto: 0,
         metodoPago: 'Tarjeta de Crédito',
@@ -97,25 +109,27 @@ export const ClientModal: React.FC<ClientModalProps> = ({
   const handleDboChange = (val: string) => {
     handleChange('dbo', val);
     if (!val) return;
-    try {
-      const birthDate = new Date(val);
-      if (!isNaN(birthDate.getTime())) {
-        const today = new Date();
-        let calcAge = today.getFullYear() - birthDate.getFullYear();
-        const m = today.getMonth() - birthDate.getMonth();
-        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) calcAge--;
-        if (calcAge >= 0) handleChange('edad', calcAge);
-      }
-    } catch (e) {}
+    const calcAge = calculateAgeFromDBO(val);
+    if (calcAge > 0) {
+      handleChange('edad', calcAge);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.nombre?.trim()) return;
 
+    const usDbo = formatToUSDate(formData.dbo);
+    const calcAge = formData.edad || calculateAgeFromDBO(usDbo);
+    const todayUS = getCurrentFormattedDateAndYear().dateUS;
+
     const finalClient: ClientPolicy = {
       ...(formData as ClientPolicy),
       id: formData.id || ('client-' + Date.now()),
+      dbo: usDbo,
+      edad: calcAge,
+      ingresoFecha: formData.ingresoFecha ? formatToUSDate(formData.ingresoFecha) : todayUS,
+      createdDate: formData.createdDate ? formatToUSDate(formData.createdDate) : todayUS,
       createdYear: formData.createdYear || selectedYear
     };
     onSave(finalClient);
@@ -123,9 +137,17 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
   const handleQuickRenewal = () => {
     if (!formData.nombre?.trim()) return;
+    const usDbo = formatToUSDate(formData.dbo);
+    const calcAge = formData.edad || calculateAgeFromDBO(usDbo);
+    const todayUS = getCurrentFormattedDateAndYear().dateUS;
+
     const finalClient: ClientPolicy = {
       ...(formData as ClientPolicy),
-      id: formData.id || ('client-' + Date.now())
+      id: formData.id || ('client-' + Date.now()),
+      dbo: usDbo,
+      edad: calcAge,
+      ingresoFecha: formData.ingresoFecha ? formatToUSDate(formData.ingresoFecha) : todayUS,
+      createdDate: formData.createdDate ? formatToUSDate(formData.createdDate) : todayUS
     };
     onRenew(finalClient);
   };
@@ -229,13 +251,63 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">Fecha de Nacimiento (D.B.O)</label>
-                <input
-                  type="date"
-                  value={formData.dbo || ''}
-                  onChange={e => handleDboChange(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
-                />
+                <label className="block font-bold text-slate-700 uppercase mb-1 flex items-center justify-between">
+                  <span>Fecha de Nacimiento (D.B.O)</span>
+                  <span className="text-[10px] text-emerald-700 font-extrabold normal-case">Formato EE.UU: MM/DD/YYYY</span>
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={formData.dbo || ''}
+                    onChange={e => handleDboChange(e.target.value)}
+                    onBlur={() => {
+                      if (formData.dbo?.trim()) {
+                        const normalized = formatToUSDate(formData.dbo);
+                        handleDboChange(normalized);
+                      }
+                    }}
+                    placeholder="MM/DD/YYYY (ej. 05/14/1984)"
+                    maxLength={10}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 pr-10 text-xs font-bold font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-900"
+                  />
+                  <input
+                    type="date"
+                    tabIndex={-1}
+                    value={formatToISODate(formData.dbo)}
+                    onChange={e => {
+                      if (e.target.value) {
+                        const us = formatToUSDate(e.target.value);
+                        handleDboChange(us);
+                      }
+                    }}
+                    className="absolute right-2 w-6 h-6 opacity-60 hover:opacity-100 cursor-pointer border-none bg-transparent"
+                    title="Seleccionar en calendario"
+                  />
+                </div>
+
+                {/* Vista previa y ayuda de formato para Supabase */}
+                {formData.dbo && (
+                  <div className="mt-1.5 flex items-center justify-between gap-1 text-[11px] bg-emerald-50/80 px-2 py-1 rounded-md border border-emerald-200">
+                    <span className="text-emerald-900 font-medium truncate">
+                      📅 {formatDateToHumanSpanish(formData.dbo)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const parts = (formData.dbo || '').split('/');
+                        if (parts.length === 3) {
+                          const swapped = `${parts[1]}/${parts[0]}/${parts[2]}`;
+                          const normalized = formatToUSDate(swapped, true);
+                          handleDboChange(normalized);
+                        }
+                      }}
+                      title="Intercambiar Mes y Día si escribiste formato Día/Mes"
+                      className="text-[10px] text-emerald-800 underline font-bold hover:text-emerald-950 shrink-0 cursor-pointer"
+                    >
+                      Invertir M/D
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -246,6 +318,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                   value={formData.edad || 0}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-black bg-emerald-50 text-emerald-900"
                 />
+                <span className="block text-[10px] text-slate-500 mt-1 font-medium">
+                  Cálculo automático según fecha de nacimiento.
+                </span>
               </div>
             </div>
           </div>
