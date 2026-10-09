@@ -64,13 +64,35 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   // Saved Quotes
   const [savedQuotesList, setSavedQuotesList] = useState<SavedQuote[]>(loadQuotes);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  useEffect(() => {
+    const onBeforePrint = () => {
+      setIsPrinting(true);
+      document.body.classList.add('is-printing-proposal');
+    };
+    const onAfterPrint = () => {
+      setIsPrinting(false);
+      document.body.classList.remove('is-printing-proposal');
+    };
+    window.addEventListener('beforeprint', onBeforePrint);
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', onBeforePrint);
+      window.removeEventListener('afterprint', onAfterPrint);
+    };
+  }, []);
 
   const handlePrintProposal = () => {
+    setIsPrinting(true);
     document.body.classList.add('is-printing-proposal');
-    window.print();
     setTimeout(() => {
-      document.body.classList.remove('is-printing-proposal');
-    }, 1000);
+      window.print();
+      setTimeout(() => {
+        setIsPrinting(false);
+        document.body.classList.remove('is-printing-proposal');
+      }, 1000);
+    }, 150);
   };
 
   // Listen for paste (Ctrl+V / Cmd+V) to easily paste screenshots
@@ -513,7 +535,9 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
   return (
     <div className="space-y-6">
       {/* Top Banner & Fast Actions */}
-      <div id="quoterTopBanner" className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-teal-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print quoter-edit-section">
+      {!isPrinting && (
+        <>
+          <div id="quoterTopBanner" className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-teal-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print quoter-edit-section">
         <div>
           <span className="px-3 py-1 bg-teal-500/20 text-teal-300 border border-teal-500/30 rounded-full text-[10px] font-black uppercase tracking-wider inline-block mb-2">
             Módulo Oficial de Cotización
@@ -976,6 +1000,8 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Panel 4: PROPUESTA PERSONALIZADA IMPRIMIBLE (FLYER) */}
       <div id="printableProposal" className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden print:shadow-none print:border-none">
@@ -1189,7 +1215,9 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
       </div>
 
       {/* Barra de Acciones del Formato de Cotización */}
-      <div className="bg-gradient-to-r from-teal-50 via-white to-sky-50 p-4 sm:p-5 rounded-2xl border border-teal-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print quoter-edit-section">
+      {!isPrinting && (
+        <>
+          <div className="bg-gradient-to-r from-teal-50 via-white to-sky-50 p-4 sm:p-5 rounded-2xl border border-teal-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print quoter-edit-section">
         <div className="flex items-center gap-3 text-xs">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white flex items-center justify-center font-bold shadow-sm">
             <Printer className="w-5 h-5" />
@@ -1290,6 +1318,8 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
             ))}
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* Modal API Key Gemini */}

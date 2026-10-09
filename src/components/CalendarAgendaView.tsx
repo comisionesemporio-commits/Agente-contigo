@@ -3,7 +3,7 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus,
   Video, Phone, Users, Clock, CheckCircle2, Circle, AlertCircle,
   ExternalLink, Trash2, Edit3, X, CalendarCheck, Share2,
-  Download, MapPin, Sparkles, User, FileText, Check
+  Download, MapPin, Sparkles, User, FileText, Check, RotateCw
 } from 'lucide-react';
 import { CalendarEvent, EventType, ClientPolicy, Role } from '../types';
 
@@ -16,6 +16,8 @@ interface CalendarAgendaViewProps {
   currentRole: Role;
   currentSeller: string;
   onShowToast: (title: string, message: string, type: 'success' | 'error' | 'info') => void;
+  onSyncFromCloud?: () => Promise<void>;
+  cloudConnected?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -33,13 +35,26 @@ export const CalendarAgendaView: React.FC<CalendarAgendaViewProps> = ({
   onDeleteEvent,
   currentRole,
   currentSeller,
-  onShowToast
+  onShowToast,
+  onSyncFromCloud,
+  cloudConnected
 }) => {
   const today = new Date();
   const [currentDate, setCurrentDate] = useState<Date>(today);
   const [viewMode, setViewMode] = useState<'mes' | 'semana' | 'lista'>('mes');
   const [filterType, setFilterType] = useState<string>('todos');
   const [filterSeller, setFilterSeller] = useState<string>('todos');
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    if (!onSyncFromCloud) return;
+    setIsSyncing(true);
+    try {
+      await onSyncFromCloud();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Modals
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -332,6 +347,19 @@ END:VCALENDAR`;
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {onSyncFromCloud && (
+            <button
+              type="button"
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              className="px-4 py-2.5 bg-slate-800/90 hover:bg-slate-700 text-indigo-200 border border-indigo-700/60 font-bold text-xs rounded-xl shadow transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              title="Sincronizar cambios recientes con la nube para todo el equipo"
+            >
+              <RotateCw className={`w-3.5 h-3.5 text-indigo-400 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Nube'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => openNewEventModal()}

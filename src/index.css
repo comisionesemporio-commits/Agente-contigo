@@ -61,8 +61,15 @@
   #quoterUploadOcrPanel,
   #quoterPlanEditorPanel,
   #quoterHistoryPanel,
-  .quoter-edit-section {
+  .quoter-edit-section,
+  body.is-printing-proposal aside,
+  body.is-printing-proposal header,
+  body.is-printing-proposal nav,
+  body.is-printing-proposal button,
+  body.is-printing-proposal .no-print,
+  body.is-printing-proposal .quoter-edit-section {
     display: none !important;
+    visibility: hidden !important;
   }
 
   /* Desbloquear scroll y alturas de contenedores padre para paginación limpia */

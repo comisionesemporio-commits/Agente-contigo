@@ -731,12 +731,12 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
             <thead className="bg-slate-900 text-slate-200 uppercase font-semibold text-[11px]">
               <tr>
                 <th className="p-3">Estatus</th>
-                <th className="p-3">Nombres y Apellidos</th>
-                <th className="p-3">Plan</th>
-                <th className="p-3">Físico</th>
-                <th className="p-3">Edad / DBO</th>
+                <th className="p-3">Nombre y apellido</th>
                 <th className="p-3">Miembros</th>
+                <th className="p-3">Compañía</th>
+                <th className="p-3">Edad</th>
                 <th className="p-3">Social</th>
+                <th className="p-3">Peso</th>
                 <th className="p-3">Método / Banco</th>
                 <th className="p-3">Teléfono</th>
                 <th className="p-3">Activo desde</th>
@@ -757,21 +757,45 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
                   const isPaid = String(c.pagoRealizado).toUpperCase() === 'TRUE';
                   return (
                     <tr key={c.id} className="hover:bg-slate-50">
+                      {/* 1. Estatus */}
                       <td className="p-3 whitespace-nowrap">
                         <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
                           {c.estatus}
                         </span>
                       </td>
+
+                      {/* 2. Nombre y apellido */}
                       <td className="p-3 font-extrabold text-slate-900">{c.nombre}</td>
-                      <td className="p-3 font-bold text-indigo-800">{c.nombrePlan || '-'}</td>
-                      <td className="p-3 text-[10px] font-bold text-slate-600">
-                        ⚖️ {c.peso || '-'} / 📏 {c.altura || '-'}
+
+                      {/* 3. Miembros */}
+                      <td className="p-3 font-bold text-purple-700">
+                        <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                          👥 {c.numDependientes || 0}
+                        </span>
                       </td>
+
+                      {/* 4. Compañía */}
+                      <td className="p-3 whitespace-nowrap">
+                        <span className="bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
+                          {c.carrier || 'General'}
+                        </span>
+                        <div className="font-bold text-indigo-800 text-[10px] mt-0.5 truncate max-w-[140px]">{c.nombrePlan || '-'}</div>
+                      </td>
+
+                      {/* 5. Edad */}
                       <td className="p-3 whitespace-nowrap font-bold text-slate-800">
-                        {c.edad || 0}a ({c.dbo || '-'})
+                        {c.edad || 0}a <span className="text-[10px] text-slate-500 font-normal">({c.dbo || '-'})</span>
                       </td>
-                      <td className="p-3 font-bold text-purple-700">{c.numDependientes || 0}</td>
-                      <td className="p-3 whitespace-nowrap font-mono text-[10px]">{c.ssn || '-'}</td>
+
+                      {/* 6. Social */}
+                      <td className="p-3 whitespace-nowrap font-mono text-[10px] font-bold text-slate-800">{c.ssn || '-'}</td>
+
+                      {/* 7. Peso */}
+                      <td className="p-3 text-[10px] font-bold text-slate-600 whitespace-nowrap">
+                        ⚖️ {c.peso || '-'} {c.altura ? `/ 📏 ${c.altura}` : ''}
+                      </td>
+
+                      {/* 8. Método / Banco */}
                       <td className="p-3 text-[10px] font-bold text-sky-800">
                         🏦 {c.bancoNombre || c.metodoPago || '-'}
                       </td>

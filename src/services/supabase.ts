@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { ClientPolicy } from '../types';
+import { ClientPolicy, CalendarEvent } from '../types';
 import {
   DEFAULT_SUPABASE_KEY, DEFAULT_SUPABASE_URL,
   formatToUSDate, formatToISODate, formatDateToHumanSpanish, calculateAgeFromDBO
@@ -204,6 +204,40 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
   };
 }
 
+export function mapCalendarEventToSupabaseRow(event: CalendarEvent) {
+  return {
+    id: event.id,
+    titulo: event.titulo || 'Cita de Asesoría',
+    descripcion: event.descripcion || '',
+    fecha: event.fecha || '',
+    hora_inicio: event.horaInicio || '',
+    hora_fin: event.horaFin || '',
+    tipo: event.tipo || 'otro',
+    cliente_relacionado: event.clienteRelacionado || '',
+    link_reunion: event.linkReunion || '',
+    asignado_a: event.asignadoA || 'Administrador',
+    completada: !!event.completada,
+    creada_en: event.creadaEn || new Date().toISOString().split('T')[0]
+  };
+}
+
+export function mapSupabaseRowToCalendarEvent(row: any): CalendarEvent {
+  return {
+    id: String(row.id),
+    titulo: row.titulo || 'Cita / Evento',
+    descripcion: row.descripcion || '',
+    fecha: row.fecha || '',
+    horaInicio: row.hora_inicio || row.horaInicio || '',
+    horaFin: row.hora_fin || row.horaFin || '',
+    tipo: (row.tipo || 'otro') as any,
+    clienteRelacionado: row.cliente_relacionado || row.clienteRelacionado || '',
+    linkReunion: row.link_reunion || row.linkReunion || '',
+    asignadoA: row.asignado_a || row.asignadoA || 'Administrador',
+    completada: Boolean(row.completada),
+    creadaEn: row.creada_en || row.creadaEn || new Date().toISOString().split('T')[0]
+  };
+}
+
 export function getSupabaseSetupSQL(): string {
   return `-- ==============================================================
 -- SCRIPT SQL OFICIAL PARA SUPERBASE (AGENTE CONTIGO)
@@ -256,10 +290,28 @@ CREATE TABLE IF NOT EXISTS public.tareas (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 4. TABLA: eventos_calendario (Agenda y Citas del Calendario Compartido)
+CREATE TABLE IF NOT EXISTS public.eventos_calendario (
+  id TEXT PRIMARY KEY,
+  titulo TEXT,
+  descripcion TEXT,
+  fecha TEXT,
+  hora_inicio TEXT,
+  hora_fin TEXT,
+  tipo TEXT,
+  cliente_relacionado TEXT,
+  link_reunion TEXT,
+  asignado_a TEXT,
+  completada BOOLEAN DEFAULT FALSE,
+  creada_en TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Desactivar RLS o dar acceso público anónimo para sincronización directa
 ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cotizaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tareas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.eventos_calendario ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public access clientes" ON public.clientes;
 CREATE POLICY "Public access clientes" ON public.clientes FOR ALL USING (true) WITH CHECK (true);
@@ -269,5 +321,8 @@ CREATE POLICY "Public access cotizaciones" ON public.cotizaciones FOR ALL USING 
 
 DROP POLICY IF EXISTS "Public access tareas" ON public.tareas;
 CREATE POLICY "Public access tareas" ON public.tareas FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access eventos_calendario" ON public.eventos_calendario;
+CREATE POLICY "Public access eventos_calendario" ON public.eventos_calendario FOR ALL USING (true) WITH CHECK (true);
 `;
 }

@@ -8,7 +8,8 @@ import {
   loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO
 } from './services/storage';
 import {
-  initSupabase, mapClientToSupabaseRow, mapSupabaseRowToClient, getSupabaseConfig
+  initSupabase, mapClientToSupabaseRow, mapSupabaseRowToClient, getSupabaseConfig,
+  mapCalendarEventToSupabaseRow, mapSupabaseRowToCalendarEvent
 } from './services/supabase';
 
 // Components
@@ -134,6 +135,98 @@ export default function App() {
     syncFromSupabase();
   }, []);
 
+  // Sincronización en tiempo real para eventos de calendario entre todas las sesiones
+  useEffect(() => {
+    const sb = initSupabase();
+    if (!sb) return;
+
+    let channel: any = null;
+    try {
+      channel = sb
+        .channel('realtime:eventos_calendario')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'eventos_calendario' },
+          (payload: any) => {
+            if (payload.eventType === 'INSERT') {
+              const newEvt = mapSupabaseRowToCalendarEvent(payload.new);
+              setCalendarEvents(prev => {
+                if (prev.some(e => e.id === newEvt.id)) return prev;
+                const next = [newEvt, ...prev];
+                saveCalendarEvents(next);
+                return next;
+              });
+            } else if (payload.eventType === 'UPDATE') {
+              const updatedEvt = mapSupabaseRowToCalendarEvent(payload.new);
+              setCalendarEvents(prev => {
+                const next = prev.map(e => (e.id === updatedEvt.id ? updatedEvt : e));
+                saveCalendarEvents(next);
+                return next;
+              });
+            } else if (payload.eventType === 'DELETE') {
+              const deletedId = payload.old?.id;
+              if (deletedId) {
+                setCalendarEvents(prev => {
+                  const next = prev.filter(e => e.id !== deletedId);
+                  saveCalendarEvents(next);
+                  return next;
+                });
+              }
+            }
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('Realtime subscription notice:', err);
+    }
+
+    return () => {
+      if (channel && sb) {
+        try {
+          sb.removeChannel(channel);
+        } catch (_) {}
+      }
+    };
+  }, []);
+
+  const syncCalendarFromSupabase = async (notify = false) => {
+    const sb = initSupabase();
+    if (!sb) return;
+    try {
+      const { data, error } = await sb.from('eventos_calendario').select('*').limit(1000);
+      if (error) {
+        console.warn('Notice loading calendar from Supabase:', error.message);
+        return;
+      }
+      if (Array.isArray(data)) {
+        if (data.length > 0) {
+          const mapped = data.map(mapSupabaseRowToCalendarEvent);
+          setCalendarEvents(mapped);
+          saveCalendarEvents(mapped);
+          localStorage.setItem('agente_calendar_synced_cloud', 'true');
+          if (notify) {
+            showToast('Calendario Actualizado', `${mapped.length} eventos sincronizados desde la nube.`, 'success');
+          }
+        } else {
+          const wasSyncedBefore = localStorage.getItem('agente_calendar_synced_cloud');
+          if (!wasSyncedBefore && calendarEvents.length > 0) {
+            // Inicializar tabla en la nube si está vacía
+            for (const evt of calendarEvents) {
+              await sb.from('eventos_calendario').upsert([mapCalendarEventToSupabaseRow(evt)]);
+            }
+            localStorage.setItem('agente_calendar_synced_cloud', 'true');
+          } else if (wasSyncedBefore) {
+            // Se sincronizó antes y la nube tiene 0 eventos (fueron borrados)
+            setCalendarEvents([]);
+            saveCalendarEvents([]);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Could not sync calendar from Supabase:', err);
+    }
+  };
+
   const syncFromSupabase = async () => {
     const sb = initSupabase();
     if (!sb) {
@@ -161,6 +254,9 @@ export default function App() {
       } else {
         setCloudStatus({ connected: true, message: 'Supabase Listo' });
       }
+
+      // Sincronizar también el calendario en la misma llamada
+      await syncCalendarFromSupabase();
     } catch (err: any) {
       console.warn('Supabase sync notice:', err);
       setCloudStatus({ connected: false, message: 'Supabase (Modo Local)' });
@@ -174,10 +270,11 @@ export default function App() {
       return;
     }
 
-    showToast('Subiendo...', `Sincronizando pólizas, cotizaciones y tareas a Supabase...`, 'info');
+    showToast('Subiendo...', `Sincronizando pólizas, cotizaciones, tareas y calendario a Supabase...`, 'info');
     let clientsCount = 0;
     let quotesCount = 0;
     let tasksCount = 0;
+    let calCount = 0;
 
     try {
       // 1. Pólizas / Clientes
@@ -229,8 +326,18 @@ export default function App() {
         } catch (e) {}
       }
 
+      // 4. Eventos de Calendario
+      for (const evt of calendarEvents) {
+        try {
+          const payload = mapCalendarEventToSupabaseRow(evt);
+          await sb.from('eventos_calendario').upsert([payload]);
+          calCount++;
+        } catch (e) {}
+      }
+      localStorage.setItem('agente_calendar_synced_cloud', 'true');
+
       setCloudStatus({ connected: true, message: 'Supabase Conectado' });
-      showToast('¡Sincronización Exitosa!', `${clientsCount} pólizas, ${quotesCount} cotizaciones y ${tasksCount} tareas sincronizadas en Supabase.`, 'success');
+      showToast('¡Sincronización Exitosa!', `${clientsCount} pólizas, ${quotesCount} cotizaciones, ${tasksCount} tareas y ${calCount} eventos del calendario sincronizados en Supabase.`, 'success');
     } catch (err: any) {
       console.error(err);
       showToast('Aviso', 'Ocurrió un error al subir a Supabase. Revisa el script SQL en Ajustes.', 'error');
@@ -311,9 +418,9 @@ export default function App() {
 
   // Navigation tab switch
   const handleTabSwitch = (tab: string) => {
-    const allowedSellerTabs = ['ventas-portal', 'tareas', 'cotizador', 'pobreza'];
+    const allowedSellerTabs = ['ventas-portal', 'calendario', 'tareas', 'cotizador', 'pobreza'];
     if (currentRole === 'vendedor' && !allowedSellerTabs.includes(tab)) {
-      showToast('Acceso Restringido', 'Los vendedores tienen acceso al portal de ventas, cotizador, tabla FPL y tareas asignadas.', 'error');
+      showToast('Acceso Restringido', 'Los vendedores tienen acceso al portal de ventas, calendario, cotizador, tabla FPL y tareas asignadas.', 'error');
       return;
     }
 
@@ -325,6 +432,10 @@ export default function App() {
 
     setActiveTab(tab);
     setSidebarOpen(false);
+
+    if (tab === 'calendario' || tab === 'tareas') {
+      syncCalendarFromSupabase();
+    }
   };
 
   // Policies Handlers
@@ -447,8 +558,8 @@ export default function App() {
     showToast('Tarea Eliminada', 'La tarea se retiró de la lista.', 'info');
   };
 
-  // Calendar Events Handlers
-  const handleAddCalendarEvent = (newEventData: Omit<CalendarEvent, 'id' | 'creadaEn'>) => {
+  // Calendar Events Handlers (Sincronización en la nube con Supabase)
+  const handleAddCalendarEvent = async (newEventData: Omit<CalendarEvent, 'id' | 'creadaEn'>) => {
     const event: CalendarEvent = {
       ...newEventData,
       id: 'evt-' + Date.now(),
@@ -457,18 +568,56 @@ export default function App() {
     const updated = [event, ...calendarEvents];
     setCalendarEvents(updated);
     saveCalendarEvents(updated);
+    localStorage.setItem('agente_calendar_synced_cloud', 'true');
+
+    const sb = initSupabase();
+    if (sb) {
+      try {
+        const payload = mapCalendarEventToSupabaseRow(event);
+        const { error } = await sb.from('eventos_calendario').upsert([payload]);
+        if (error) {
+          console.warn('Aviso guardando evento en Supabase:', error.message);
+        }
+      } catch (e) {
+        console.warn('Error syncing event to Supabase:', e);
+      }
+    }
   };
 
-  const handleUpdateCalendarEvent = (updatedEvent: CalendarEvent) => {
+  const handleUpdateCalendarEvent = async (updatedEvent: CalendarEvent) => {
     const updated = calendarEvents.map(e => (e.id === updatedEvent.id ? updatedEvent : e));
     setCalendarEvents(updated);
     saveCalendarEvents(updated);
+
+    const sb = initSupabase();
+    if (sb) {
+      try {
+        const payload = mapCalendarEventToSupabaseRow(updatedEvent);
+        await sb.from('eventos_calendario').upsert([payload]);
+      } catch (e) {
+        console.warn('Error updating event in Supabase:', e);
+      }
+    }
   };
 
-  const handleDeleteCalendarEvent = (eventId: string) => {
+  const handleDeleteCalendarEvent = async (eventId: string) => {
     const updated = calendarEvents.filter(e => e.id !== eventId);
     setCalendarEvents(updated);
     saveCalendarEvents(updated);
+    localStorage.setItem('agente_calendar_synced_cloud', 'true');
+
+    const sb = initSupabase();
+    if (sb) {
+      try {
+        const { error } = await sb.from('eventos_calendario').delete().eq('id', eventId);
+        if (error) {
+          console.warn('Aviso borrando evento en Supabase:', error.message);
+        }
+      } catch (e) {
+        console.warn('Error deleting event from Supabase:', e);
+      }
+    }
+    showToast('Evento Eliminado', 'El evento ha sido borrado de la agenda para todas las sesiones.', 'info');
   };
 
   // Agents Handlers
@@ -1228,6 +1377,8 @@ export default function App() {
                 currentRole={currentRole}
                 currentSeller={currentSeller}
                 onShowToast={showToast}
+                onSyncFromCloud={() => syncCalendarFromSupabase(true)}
+                cloudConnected={cloudStatus.connected}
               />
             )}
 

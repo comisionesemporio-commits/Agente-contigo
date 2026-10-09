@@ -443,12 +443,12 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
             <thead className="bg-slate-900 text-slate-200 uppercase font-semibold tracking-wider text-[11px] sticky top-0 whitespace-nowrap">
               <tr>
                 <th className="p-3">Estatus</th>
-                <th className="p-3">Nombres y Apellidos</th>
-                <th className="p-3">Compañía & Plan</th>
-                <th className="p-3">Físico (Peso/Alt)</th>
-                <th className="p-3">Edad / D.B.O</th>
+                <th className="p-3">Nombre y apellido</th>
                 <th className="p-3">Miembros</th>
+                <th className="p-3">Compañía</th>
+                <th className="p-3">Edad</th>
                 <th className="p-3">Social</th>
+                <th className="p-3">Peso</th>
                 <th className="p-3">Teléfono / Contacto</th>
                 <th className="p-3">Vendedor / Agente</th>
                 <th className="p-3">Método / Banco</th>
@@ -497,6 +497,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                       onClick={() => onEditClient(c)}
                       className={`${rowBorder} ${rowBg} transition cursor-pointer text-xs`}
                     >
+                      {/* 1. Estatus */}
                       <td className="p-3 whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center ${
                           c.estatus === 'Activo'
@@ -512,10 +513,19 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </span>
                       </td>
 
+                      {/* 2. Nombre y apellido */}
                       <td className="p-3 whitespace-nowrap font-black text-slate-900">
                         {c.nombre || 'Sin Nombre'}
                       </td>
 
+                      {/* 3. Miembros */}
+                      <td className="p-3 whitespace-nowrap font-bold text-purple-700">
+                        <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-md font-black text-[11px] inline-flex items-center gap-1">
+                          👥 {c.numDependientes ?? 0}
+                        </span>
+                      </td>
+
+                      {/* 4. Compañía */}
                       <td className="p-3 whitespace-nowrap">
                         <span className="bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
                           {c.carrier || 'General'}
@@ -525,11 +535,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </div>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap font-bold text-slate-700 text-[10px]">
-                        <div>⚖️ {c.peso || '-'}</div>
-                        <div>📏 {c.altura || '-'}</div>
-                      </td>
-
+                      {/* 5. Edad */}
                       <td className="p-3 whitespace-nowrap">
                         <div className="font-bold text-slate-900">{c.edad || 0} años</div>
                         <div className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
@@ -543,12 +549,15 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </div>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap font-bold text-purple-700">
-                        {c.numDependientes || 0}
-                      </td>
-
+                      {/* 6. Social */}
                       <td className="p-3 whitespace-nowrap font-mono font-bold text-slate-800">
                         {c.ssn || '-'}
+                      </td>
+
+                      {/* 7. Peso */}
+                      <td className="p-3 whitespace-nowrap font-bold text-slate-700 text-[10px]">
+                        <div>⚖️ {c.peso || '-'}</div>
+                        {c.altura && <div className="text-slate-500 font-medium">📏 {c.altura}</div>}
                       </td>
 
                       <td className="p-3 min-w-[170px]">
