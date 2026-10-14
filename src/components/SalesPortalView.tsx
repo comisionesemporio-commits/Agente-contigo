@@ -5,6 +5,7 @@ import {
   FileCheck, Shield, HeartPulse, User, Phone, MapPin, Building
 } from 'lucide-react';
 import { MONTHS_LIST, formatToUSDate, formatToISODate, calculateAgeFromDBO, formatDateToHumanSpanish } from '../services/storage';
+import { formatShortName } from './PoliciesView';
 
 interface SalesPortalViewProps {
   currentSeller: string;
@@ -728,24 +729,24 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
 
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-900 text-slate-200 uppercase font-semibold text-[11px]">
+            <thead className="bg-slate-900 text-slate-200 uppercase font-bold text-[10px] whitespace-nowrap">
               <tr>
-                <th className="p-3">Estatus</th>
-                <th className="p-3">Nombre y apellido</th>
-                <th className="p-3">Miembros</th>
-                <th className="p-3">Compañía</th>
-                <th className="p-3">Edad</th>
-                <th className="p-3">Social</th>
-                <th className="p-3">Peso</th>
-                <th className="p-3">Método / Banco</th>
-                <th className="p-3">Teléfono</th>
-                <th className="p-3">Activo desde</th>
-                <th className="p-3">Ingreso ($)</th>
-                <th className="p-3">Prima ($)</th>
-                <th className="p-3">Pago</th>
+                <th className="px-2.5 py-2">Estatus</th>
+                <th className="px-2.5 py-2">Nombre y apellido</th>
+                <th className="px-2.5 py-2">Personas Activas / Miembros</th>
+                <th className="px-2.5 py-2">Fecha de nacimiento</th>
+                <th className="px-2.5 py-2">Seguro Social</th>
+                <th className="px-2.5 py-2">Compañías de seguros</th>
+                <th className="px-2.5 py-2">Plan</th>
+                <th className="px-2.5 py-2">Dirección</th>
+                <th className="px-2.5 py-2">Vendedor</th>
+                <th className="px-2.5 py-2">Prima ($)</th>
+                <th className="px-2.5 py-2">Edad</th>
+                <th className="px-2.5 py-2">Teléfono</th>
+                <th className="px-2.5 py-2">Pago</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 font-medium">
+            <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
               {myPolicies.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="p-6 text-center text-slate-400 font-semibold">
@@ -755,57 +756,115 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
               ) : (
                 myPolicies.map(c => {
                   const isPaid = String(c.pagoRealizado).toUpperCase() === 'TRUE';
+                  const rawStatus = String(c.estatus || 'Activo').trim();
+                  const lowerEst = rawStatus.toLowerCase();
+                  const isMigratory = (
+                    lowerEst.includes('ciudadan') ||
+                    lowerEst.includes('resident') ||
+                    lowerEst.includes('permiso') ||
+                    lowerEst.includes('parole') ||
+                    lowerEst.includes('daca') ||
+                    lowerEst.includes('visa') ||
+                    lowerEst.includes('asilo') ||
+                    lowerEst.includes('tps') ||
+                    lowerEst.includes('indocument') ||
+                    lowerEst.includes('green card') ||
+                    lowerEst.includes('work permit')
+                  );
+                  const isCancel = !isMigratory && (lowerEst.includes('cancel') || rawStatus === 'Cancelado');
+                  const isActivo = isMigratory || lowerEst === 'activo' || lowerEst === 'activos' || !isCancel;
+
+                  const numDeps = typeof c.numDependientes === 'number' && !isNaN(c.numDependientes) ? c.numDependientes : 0;
+                  const totalMiembros = Math.max(1, numDeps + 1);
+
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50">
+                    <tr key={c.id} className="hover:bg-slate-50 transition">
                       {/* 1. Estatus */}
-                      <td className="p-3 whitespace-nowrap">
-                        <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                          {c.estatus}
-                        </span>
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        {isActivo ? (
+                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Activo
+                          </span>
+                        ) : (
+                          <span className="bg-rose-100 text-rose-800 border border-rose-300 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            Cancelado
+                          </span>
+                        )}
                       </td>
 
                       {/* 2. Nombre y apellido */}
-                      <td className="p-3 font-extrabold text-slate-900">{c.nombre}</td>
-
-                      {/* 3. Miembros */}
-                      <td className="p-3 font-bold text-purple-700">
-                        <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-md font-bold text-[10px]">
-                          👥 {c.numDependientes || 0}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap text-xs" title={`Nombre completo: ${c.nombre || ''}`}>
+                        <span className="truncate max-w-[130px] sm:max-w-[160px] inline-block align-middle font-bold text-slate-900">
+                          {formatShortName(c.nombre)}
                         </span>
                       </td>
 
-                      {/* 4. Compañía */}
-                      <td className="p-3 whitespace-nowrap">
-                        <span className="bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
-                          {c.carrier || 'General'}
+                      {/* 3 & 4. Personas Activas / Miembros */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                          👥 {totalMiembros} {totalMiembros === 1 ? 'persona activa' : 'personas activas'}
                         </span>
-                        <div className="font-bold text-indigo-800 text-[10px] mt-0.5 truncate max-w-[140px]">{c.nombrePlan || '-'}</div>
                       </td>
 
-                      {/* 5. Edad */}
-                      <td className="p-3 whitespace-nowrap font-bold text-slate-800">
-                        {c.edad || 0}a <span className="text-[10px] text-slate-500 font-normal">({c.dbo || '-'})</span>
+                      {/* 5. Fecha de nacimiento */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-bold text-slate-800 text-xs">
+                        🎂 {c.dbo || '-'}
                       </td>
 
-                      {/* 6. Social */}
-                      <td className="p-3 whitespace-nowrap font-mono text-[10px] font-bold text-slate-800">{c.ssn || '-'}</td>
-
-                      {/* 7. Peso */}
-                      <td className="p-3 text-[10px] font-bold text-slate-600 whitespace-nowrap">
-                        ⚖️ {c.peso || '-'} {c.altura ? `/ 📏 ${c.altura}` : ''}
+                      {/* 6. Seguro Social */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-mono text-xs font-bold text-slate-800">
+                        <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                          🔒 {c.ssn || '-'}
+                        </span>
                       </td>
 
-                      {/* 8. Método / Banco */}
-                      <td className="p-3 text-[10px] font-bold text-sky-800">
-                        🏦 {c.bancoNombre || c.metodoPago || '-'}
+                      {/* 7. Compañías de seguros */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className="bg-slate-100 text-slate-900 border border-slate-300 px-2 py-0.5 rounded font-extrabold text-[10px] inline-flex items-center gap-1">
+                          🛡️ {c.carrier || 'General'}
+                        </span>
                       </td>
-                      <td className="p-3">{c.telefono || '-'}</td>
-                      <td className="p-3 font-bold text-emerald-700">{c.mesIngreso || 'Enero'}</td>
-                      <td className="p-3 font-mono font-bold text-emerald-700">${(c.ingresoMonto || 0).toFixed(2)}</td>
-                      <td className="p-3 font-mono font-bold text-teal-700">${(c.primaMonto || 0).toFixed(2)}</td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
-                          isPaid ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+
+                      {/* 8. Plan */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 max-w-[130px] truncate" title={c.nombrePlan}>
+                          📑 {c.nombrePlan || '-'}
+                        </span>
+                      </td>
+
+                      {/* 9. Dirección */}
+                      <td className="px-2.5 py-1.5 min-w-[120px] text-slate-700 text-xs">
+                        <div className="truncate max-w-[150px]" title={c.direccion}>
+                          📍 {c.direccion || '-'}
+                        </div>
+                      </td>
+
+                      {/* 10. Vendedor */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap text-xs">
+                        <span className="font-extrabold text-amber-900 truncate max-w-[110px] inline-block align-middle" title={c.vendedor}>
+                          👤 {formatShortName(c.vendedor || currentSeller)}
+                        </span>
+                      </td>
+
+                      {/* 11. Prima ($) */}
+                      <td className="px-2.5 py-1.5 font-mono font-bold text-teal-700 whitespace-nowrap text-xs">
+                        ${(c.primaMonto || 0).toFixed(2)}
+                      </td>
+
+                      {/* 12. Edad */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-bold text-slate-800 text-xs">
+                        {c.edad || 0}a
+                      </td>
+
+                      {/* 13. Teléfono */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap text-xs">📞 {c.telefono || '-'}</td>
+
+                      {/* 14. Pago */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                          isPaid ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                         }`}>
                           {isPaid ? '🟢 SÍ' : '🔴 NO'}
                         </span>

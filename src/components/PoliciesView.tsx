@@ -1,11 +1,25 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ClientPolicy, Agent } from '../types';
 import {
   Users, CheckCircle2, XCircle, ShieldAlert, DollarSign,
   Search, RotateCcw, Filter, ChevronDown, Edit, Lock, Unlock,
-  CreditCard, Calendar, Phone, MapPin, Building, Gift, ShieldCheck
+  CreditCard, Calendar, Phone, MapPin, Building, Gift, ShieldCheck,
+  FileSpreadsheet, Upload, Download, FileText, Check,
+  ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight
 } from 'lucide-react';
 import { MONTHS_LIST } from '../services/storage';
+import { exportToExcelFile, downloadExcelTemplate, parseExcelOrCSVBuffer } from '../services/excelService';
+
+export function formatShortName(rawName?: string): string {
+  if (!rawName) return 'Sin Nombre';
+  const name = rawName.trim();
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return name;
+  if (parts.length === 3) {
+    return `${parts[0]} ${parts[2]}`;
+  }
+  return `${parts[0]} ${parts[2] || parts[1]}`;
+}
 
 export function getClientBirthMonth(dbo?: string): number | null {
   if (!dbo) return null;
@@ -64,6 +78,8 @@ interface PoliciesViewProps {
   onOpenPinModal: (target?: string) => void;
   onEditClient: (client: ClientPolicy) => void;
   onRefreshData: () => void;
+  onImportClients?: (newClients: ClientPolicy[]) => void;
+  onShowToast?: (title: string, message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 export const PoliciesView: React.FC<PoliciesViewProps> = ({
@@ -76,8 +92,11 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   isCommissionUnlocked,
   onOpenPinModal,
   onEditClient,
-  onRefreshData
+  onRefreshData,
+  onImportClients,
+  onShowToast
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
   const [filterSeller, setFilterSeller] = useState<string[]>([]);
@@ -89,6 +108,10 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   const [filterBirthMonth, setFilterBirthMonth] = useState('');
   const [showSellerMenu, setShowSellerMenu] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
+
+  // Pagination state (default 20 as requested)
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Filter clients by active year
   const yearClients = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
@@ -185,6 +208,19 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     return true;
   });
 
+  // Reset to first page when any search or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterPayment, filterSeller, filterAgent, filterState, filterStatus, filterCarrier, filterMonth, filterBirthMonth, selectedYear]);
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const paginatedClients = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredClients.slice(start, start + pageSize);
+  }, [filteredClients, safeCurrentPage, pageSize]);
+
   const resetFilters = () => {
     setSearchTerm('');
     setFilterPayment('');
@@ -195,6 +231,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     setFilterCarrier('');
     setFilterMonth('');
     setFilterBirthMonth('');
+    setCurrentPage(1);
   };
 
   const toggleSellerSelect = (sellerName: string) => {
@@ -211,6 +248,37 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     } else {
       setFilterAgent([...filterAgent, agentName]);
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target?.result as ArrayBuffer;
+        const { clients: importedClients, detectedHeaders } = parseExcelOrCSVBuffer(buffer, selectedYear);
+        if (importedClients.length === 0) {
+          onShowToast?.('Archivo sin datos', 'No se pudieron extraer registros de pólizas válidos. Revisa el formato o usa la Plantilla Excel.', 'error');
+          return;
+        }
+        if (onImportClients) {
+          onImportClients(importedClients);
+        }
+        onShowToast?.(
+          '¡Importación Exitosa!',
+          `Se cargaron ${importedClients.length} clientes con formato de columnas separadas.`,
+          'success'
+        );
+      } catch (err: any) {
+        console.error('Error al importar:', err);
+        onShowToast?.('Error al leer archivo', err.message || 'Verifica que el archivo sea un Excel (.xlsx, .xls) o CSV válido.', 'error');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   return (
@@ -234,22 +302,14 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
             </select>
           </div>
 
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={onRefreshData}
-              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg transition text-xs border border-emerald-300 flex items-center gap-1.5"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Sincronizar</span>
-            </button>
-
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={resetFilters}
-              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs border border-slate-300 flex items-center gap-1"
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-lg transition text-xs border border-slate-300 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Restablecer todos los filtros de búsqueda"
             >
-              <Filter className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
               <span>Limpiar Filtros</span>
             </button>
           </div>
@@ -440,39 +500,56 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-900 text-slate-200 uppercase font-semibold tracking-wider text-[11px] sticky top-0 whitespace-nowrap">
+            <thead className="bg-slate-900 text-slate-200 uppercase font-bold tracking-wider text-[10px] sticky top-0 whitespace-nowrap">
               <tr>
-                <th className="p-3">Estatus</th>
-                <th className="p-3">Nombre y apellido</th>
-                <th className="p-3">Miembros</th>
-                <th className="p-3">Compañía</th>
-                <th className="p-3">Edad</th>
-                <th className="p-3">Social</th>
-                <th className="p-3">Peso</th>
-                <th className="p-3">Teléfono / Contacto</th>
-                <th className="p-3">Vendedor / Agente</th>
-                <th className="p-3">Método / Banco</th>
-                <th className="p-3">Activo desde</th>
-                <th className="p-3">Ingreso ($)</th>
-                <th className="p-3">Prima ($)</th>
-                <th className="p-3">Pago</th>
-                <th className="p-3 text-right">Comisión</th>
-                <th className="p-3 text-center">Acción</th>
+                <th className="px-2.5 py-2">Estatus</th>
+                <th className="px-2.5 py-2">Nombre y apellido</th>
+                <th className="px-2.5 py-2">Personas Activas / Miembros</th>
+                <th className="px-2.5 py-2">Fecha de nacimiento</th>
+                <th className="px-2.5 py-2">Seguro Social</th>
+                <th className="px-2.5 py-2">Compañías de seguros</th>
+                <th className="px-2.5 py-2">Plan</th>
+                <th className="px-2.5 py-2">Dirección</th>
+                <th className="px-2.5 py-2">Vendedor</th>
+                <th className="px-2.5 py-2">Prima ($)</th>
+                <th className="px-2.5 py-2">Edad</th>
+                <th className="px-2.5 py-2">Teléfono</th>
+                <th className="px-2.5 py-2">Pago</th>
+                <th className="px-2.5 py-2 text-right">Comisión</th>
+                <th className="px-2.5 py-2 text-center">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
               {filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="p-10 text-center text-slate-400 font-semibold">
+                  <td colSpan={15} className="p-10 text-center text-slate-400 font-semibold">
                     No se encontraron pólizas coincidentes para el año {selectedYear}
                   </td>
                 </tr>
               ) : (
-                filteredClients.map(c => {
+                paginatedClients.map(c => {
                   const isPaid = String(c.pagoRealizado).toUpperCase() === 'TRUE';
-                  const isCancel = c.estatus === 'Cancelado';
-                  const isRobado = c.estatus === 'Robado';
-                  const isNew = c.estatus === 'Nuevo' || c.estatus === 'Subido / Listo' || c.estatus === 'Pendiente';
+                  const rawStatus = String(c.estatus || 'Activo').trim();
+                  const lowerEst = rawStatus.toLowerCase();
+
+                  // Limpieza: si tiene estatus migratorio (ciudadanos, residentes, etc.), tratarlo como Activo
+                  const isMigratory = (
+                    lowerEst.includes('ciudadan') ||
+                    lowerEst.includes('resident') ||
+                    lowerEst.includes('permiso') ||
+                    lowerEst.includes('parole') ||
+                    lowerEst.includes('daca') ||
+                    lowerEst.includes('visa') ||
+                    lowerEst.includes('asilo') ||
+                    lowerEst.includes('tps') ||
+                    lowerEst.includes('indocument') ||
+                    lowerEst.includes('green card') ||
+                    lowerEst.includes('work permit')
+                  );
+
+                  const isCancel = !isMigratory && (lowerEst.includes('cancel') || rawStatus === 'Cancelado');
+                  const isRobado = !isMigratory && (lowerEst.includes('rob') || rawStatus === 'Robado');
+                  const isActivo = isMigratory || lowerEst === 'activo' || lowerEst === 'activos' || (!isCancel && !isRobado);
 
                   let rowBorder = 'border-l-4 border-l-emerald-500';
                   let rowBg = 'hover:bg-slate-50/80';
@@ -482,149 +559,154 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                   } else if (isRobado) {
                     rowBorder = 'border-l-4 border-l-purple-500';
                     rowBg = 'bg-purple-50/40 hover:bg-purple-50/70';
-                  } else if (isNew) {
-                    rowBorder = 'border-l-4 border-l-blue-500';
-                    rowBg = 'bg-blue-50/30 hover:bg-blue-50/60';
                   }
 
                   const commDisplay = isCommissionUnlocked
                     ? `$30.00 (${isPaid ? 'Cobrado' : 'Pendiente'})`
                     : '🔒 $***';
 
+                  const numDeps = typeof c.numDependientes === 'number' && !isNaN(c.numDependientes) ? c.numDependientes : 0;
+                  const totalMiembros = Math.max(1, numDeps + 1);
+
                   return (
                     <tr
                       key={c.id}
                       onClick={() => onEditClient(c)}
                       className={`${rowBorder} ${rowBg} transition cursor-pointer text-xs`}
+                      title={`Clic para ver o editar la información completa de ${c.nombre || 'este cliente'}`}
                     >
-                      {/* 1. Estatus */}
-                      <td className="p-3 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center ${
-                          c.estatus === 'Activo'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : isCancel
-                            ? 'bg-rose-100 text-rose-800'
-                            : isRobado
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          <span className="w-1.5 h-1.5 rounded-full bg-current mr-1"></span>
-                          {c.estatus || 'Activo'}
+                      {/* 1. Estatus (Activo / Cancelado - Sin estatus migratorio) */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        {isActivo ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Activo
+                          </span>
+                        ) : isCancel ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-rose-100 text-rose-800 border border-rose-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                            Cancelado
+                          </span>
+                        ) : isRobado ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-purple-100 text-purple-800 border border-purple-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                            Robado
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-blue-100 text-blue-800 border border-blue-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                            {rawStatus}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 2. Nombre y apellido (Recortado a nombre y apellido; completo al abrir o en hover) */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap text-xs" title={`Nombre completo: ${c.nombre || ''}`}>
+                        <span className="truncate max-w-[130px] sm:max-w-[160px] inline-block align-middle font-bold text-slate-900">
+                          {formatShortName(c.nombre)}
                         </span>
                       </td>
 
-                      {/* 2. Nombre y apellido */}
-                      <td className="p-3 whitespace-nowrap font-black text-slate-900">
-                        {c.nombre || 'Sin Nombre'}
-                      </td>
-
-                      {/* 3. Miembros */}
-                      <td className="p-3 whitespace-nowrap font-bold text-purple-700">
-                        <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-md font-black text-[11px] inline-flex items-center gap-1">
-                          👥 {c.numDependientes ?? 0}
+                      {/* 3 & 4. Cuántas personas activas son / Miembros en póliza */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className="bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs" title={`Póliza con ${totalMiembros} miembros (1 titular + ${numDeps} dependientes)`}>
+                          <Users className="w-3 h-3 text-purple-600" />
+                          <span>{totalMiembros} {totalMiembros === 1 ? 'persona activa' : 'personas activas'}</span>
                         </span>
                       </td>
 
-                      {/* 4. Compañía */}
-                      <td className="p-3 whitespace-nowrap">
-                        <span className="bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded-md font-bold text-[10px]">
-                          {c.carrier || 'General'}
-                        </span>
-                        <div className="text-[10px] font-extrabold text-indigo-700 mt-0.5 truncate max-w-[150px]">
-                          {c.nombrePlan || '-'}
-                        </div>
-                      </td>
-
-                      {/* 5. Edad */}
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="font-bold text-slate-900">{c.edad || 0} años</div>
-                        <div className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
+                      {/* 5. Fecha de nacimiento */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-medium text-slate-700 text-xs">
+                        <div className="font-bold text-slate-900 flex items-center gap-1">
                           <span>🎂 {c.dbo || '-'}</span>
                           {getClientBirthMonth(c.dbo) === (new Date().getMonth() + 1) && (
-                            <span className="bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded-full text-[9px] font-black border border-pink-300 animate-pulse inline-flex items-center gap-0.5" title="¡Cumpleaños este mes!">
+                            <span className="bg-pink-100 text-pink-700 px-1 py-0.2 rounded-full text-[9px] font-black border border-pink-300 animate-pulse inline-flex items-center gap-0.5" title="¡Cumpleaños este mes!">
                               <Gift className="w-2.5 h-2.5" />
-                              <span>¡Este mes!</span>
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* 6. Social */}
-                      <td className="p-3 whitespace-nowrap font-mono font-bold text-slate-800">
-                        {c.ssn || '-'}
+                      {/* 6. Seguro Social (SSN) */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-mono font-bold text-slate-800 text-xs">
+                        <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded inline-flex items-center gap-1">
+                          🔒 {c.ssn || '-'}
+                        </span>
                       </td>
 
-                      {/* 7. Peso */}
-                      <td className="p-3 whitespace-nowrap font-bold text-slate-700 text-[10px]">
-                        <div>⚖️ {c.peso || '-'}</div>
-                        {c.altura && <div className="text-slate-500 font-medium">📏 {c.altura}</div>}
+                      {/* 7. Compañías de seguros */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className="bg-slate-100 text-slate-900 border border-slate-300 px-2 py-0.5 rounded font-extrabold text-[10px] inline-flex items-center gap-1">
+                          🛡️ {c.carrier || 'General'}
+                        </span>
                       </td>
 
-                      <td className="p-3 min-w-[170px]">
-                        <div className="text-[10px] font-bold text-slate-800">📞 {c.telefono || '-'}</div>
-                        <div className="text-[10px] text-slate-600 font-medium truncate max-w-[200px]">
-                          {c.estadoUSA || 'GA'} - {c.direccion || '-'}
+                      {/* 8. Plan */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 max-w-[130px] truncate" title={c.nombrePlan}>
+                          📑 {c.nombrePlan || '-'}
+                        </span>
+                      </td>
+
+                      {/* 9. Dirección */}
+                      <td className="px-2.5 py-1.5 min-w-[120px] text-slate-700 text-xs">
+                        <div className="truncate max-w-[150px]" title={c.direccion}>
+                          📍 {c.direccion || '-'}
                         </div>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="font-bold text-amber-800 flex items-center gap-1">
-                          <span>👤</span>
-                          <span>{c.vendedor || 'General'}</span>
-                        </div>
-                        {c.agente && (
-                          <div className="text-[10px] font-semibold text-indigo-700 mt-0.5 flex items-center gap-1">
-                            <span>🎖️</span>
-                            <span>{c.agente}</span>
-                          </div>
-                        )}
+                      {/* 10. Vendedor */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap text-xs">
+                        <span className="font-extrabold text-amber-900 truncate max-w-[110px] inline-block align-middle" title={c.vendedor}>
+                          👤 {formatShortName(c.vendedor || 'General')}
+                        </span>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap font-semibold text-slate-700 text-[10px]">
-                        <div className="font-bold text-sky-800">🏦 {c.bancoNombre || c.metodoPago || '-'}</div>
-                        <div className="font-mono text-slate-500">
-                          {c.bancoCuenta ? '••••' + c.bancoCuenta.slice(-4) : ''}
-                        </div>
-                      </td>
-
-                      <td className="p-3 whitespace-nowrap font-bold text-emerald-700">
-                        {c.mesIngreso || 'Enero'}
-                      </td>
-
-                      <td className="p-3 whitespace-nowrap font-mono font-bold text-emerald-700 tabular-nums">
-                        ${(c.ingresoMonto || 0).toFixed(2)}
-                      </td>
-
-                      <td className="p-3 whitespace-nowrap font-mono font-bold text-teal-700 tabular-nums">
+                      {/* 11. Prima ($) */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-mono font-bold text-teal-700 tabular-nums text-xs">
                         ${(c.primaMonto || 0).toFixed(2)}
                       </td>
 
-                      <td className="p-3 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      {/* 12. Edad */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-bold text-slate-800 text-xs">
+                        {c.edad || 0}a
+                      </td>
+
+                      {/* 13. Teléfono */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap font-medium text-slate-800 text-xs">
+                        📞 {c.telefono || '-'}
+                      </td>
+
+                      {/* 14. Pago */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
                           isPaid ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
                         }`}>
                           {isPaid ? '🟢 SÍ' : '🔴 NO'}
                         </span>
                       </td>
 
-                      <td className="p-3 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      {/* 15. Comisión */}
+                      <td className="px-2.5 py-1.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => onOpenPinModal('polizas-cell')}
-                          className="px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer bg-slate-100 text-slate-800 shadow-sm hover:bg-slate-200 transition"
+                          className="px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer bg-slate-100 text-slate-800 shadow-2xs hover:bg-slate-200 transition"
                         >
                           {commDisplay}
                         </button>
                       </td>
 
-                      <td className="p-3 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      {/* 16. Acción (Editar) */}
+                      <td className="px-2.5 py-1.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => onEditClient(c)}
-                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg transition border border-emerald-200"
-                          title="Editar expediente"
+                          className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold rounded-md transition border border-emerald-300 flex items-center gap-1 mx-auto cursor-pointer shadow-2xs text-[10px]"
+                          title="Editar todos los datos de esta póliza"
                         >
-                          <Edit className="w-3.5 h-3.5" />
+                          <Edit className="w-3 h-3 text-emerald-600" />
+                          <span>Editar</span>
                         </button>
                       </td>
                     </tr>
@@ -635,12 +717,74 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
           </table>
         </div>
 
-        <div className="p-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
-          <span>Mostrando {filteredClients.length} de {yearClients.length} clientes del año {selectedYear}</span>
-          <span className="text-slate-400 flex items-center gap-1">
-            <Edit className="w-3 h-3" />
-            Haz clic en una fila para modificar la póliza
-          </span>
+        {/* Pagination Bar - Matching user screenshot */}
+        <div className="bg-white border-t border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Left: Rows per page */}
+          <div className="flex items-center gap-2 text-slate-700 font-medium">
+            <span className="text-slate-600 font-semibold">Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="border border-slate-300 rounded-md px-2.5 py-1 bg-white text-xs font-bold text-slate-700 shadow-2xs hover:border-slate-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={30}>30</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span className="text-slate-400 text-[11px] ml-2 hidden sm:inline">
+              ({filteredClients.length} pólizas en total)
+            </span>
+          </div>
+
+          {/* Right: Controls << < Page X of Y > >> */}
+          <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={safeCurrentPage <= 1}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Primera página"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={safeCurrentPage <= 1}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Página anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <span className="px-3 py-1 text-xs font-semibold text-slate-800 whitespace-nowrap">
+              Page {safeCurrentPage} of {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Página siguiente"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={safeCurrentPage >= totalPages}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Última página"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

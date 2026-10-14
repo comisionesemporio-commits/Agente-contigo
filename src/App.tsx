@@ -4,13 +4,14 @@ import {
 } from './types';
 import {
   MONTHS_LIST, DEFAULT_SELLERS, DEFAULT_CARRIERS, DEFAULT_STATUSES,
-  loadClients, saveClients, loadTasks, saveTasks, loadAgents, saveAgents,
+  loadClients, saveClients, sanitizeClients, loadTasks, saveTasks, loadAgents, saveAgents,
   loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO
 } from './services/storage';
 import {
   initSupabase, mapClientToSupabaseRow, mapSupabaseRowToClient, getSupabaseConfig,
   mapCalendarEventToSupabaseRow, mapSupabaseRowToCalendarEvent
 } from './services/supabase';
+import { exportToExcelFile, downloadExcelTemplate, parseExcelOrCSVBuffer } from './services/excelService';
 
 // Components
 import { LoginView } from './components/LoginView';
@@ -175,9 +176,14 @@ export default function App() {
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string) => {
+          if (status === 'CHANNEL_ERROR') {
+            // La tabla puede no estar habilitada para realtime aún en Supabase
+            console.info('Aviso: Canal en tiempo real inactivo o pendiente de habilitar en Supabase.');
+          }
+        });
     } catch (err) {
-      console.warn('Realtime subscription notice:', err);
+      console.info('Aviso Realtime:', err);
     }
 
     return () => {
@@ -195,7 +201,12 @@ export default function App() {
     try {
       const { data, error } = await sb.from('eventos_calendario').select('*').limit(1000);
       if (error) {
-        console.warn('Notice loading calendar from Supabase:', error.message);
+        // Si la tabla no ha sido creada en Supabase (Error 404 / PGRST205 / schema cache)
+        if (error.code === 'PGRST205' || error.message?.includes('schema cache') || error.message?.includes('does not exist')) {
+          console.info('Aviso Supabase: La tabla eventos_calendario aún no ha sido creada. Se sincronizará en modo local.');
+        } else {
+          console.warn('Aviso calendario Supabase:', error.message);
+        }
         return;
       }
       if (Array.isArray(data)) {
@@ -246,7 +257,8 @@ export default function App() {
       if (error) throw error;
 
       if (Array.isArray(data) && data.length > 0) {
-        const mapped = data.map((row: any) => mapSupabaseRowToClient(row, selectedYear));
+        const rawMapped = data.map((row: any) => mapSupabaseRowToClient(row, selectedYear));
+        const mapped = sanitizeClients(rawMapped);
         setClients(mapped);
         saveClients(mapped);
         setCloudStatus({ connected: true, message: 'Supabase Conectado' });
@@ -280,7 +292,19 @@ export default function App() {
       // 1. Pólizas / Clientes
       for (const c of clients) {
         const payload = mapClientToSupabaseRow(c);
-        await sb.from('clientes').upsert([payload]);
+        let { error } = await sb.from('clientes').upsert([payload]);
+        if (error && (error.code === 'PGRST204' || error.message?.includes('column') || error.message?.includes('schema cache'))) {
+          const fallbackPayload: Record<string, any> = {
+            id: payload.id,
+            nombre: (payload.nombre + (payload.apellido ? ` ${payload.apellido}` : '')).trim(),
+            telefono: payload.telefono || '',
+            ssn: payload.ssn || '',
+            vendedor: payload.vendedor || 'General',
+            estatus: payload.estatus || 'Activo',
+            estado: payload.estado || 'GA'
+          };
+          await sb.from('clientes').upsert([fallbackPayload]);
+        }
         clientsCount++;
       }
 
@@ -349,11 +373,33 @@ export default function App() {
     if (!sb) return;
     try {
       const payload = mapClientToSupabaseRow(client);
-      const { error } = await sb.from('clientes').upsert([payload]);
+      let { error } = await sb.from('clientes').upsert([payload]);
+
+      // Si falla porque alguna columna no existe en su tabla Supabase (ej: 'enfermedades', 'metodo_pago', 'anio', etc.):
+      if (error && (error.code === 'PGRST204' || error.message?.includes('column') || error.message?.includes('schema cache'))) {
+        console.warn('Reintentando guardar cliente con columnas base compatibles:', error.message);
+        const fallbackPayload: Record<string, any> = {
+          id: payload.id,
+          nombre: (payload.nombre + (payload.apellido ? ` ${payload.apellido}` : '')).trim(),
+          telefono: payload.telefono || '',
+          ssn: payload.ssn || '',
+          vendedor: payload.vendedor || 'General',
+          estatus: payload.estatus || 'Activo',
+          estado: payload.estado || 'GA'
+        };
+        const retryResult = await sb.from('clientes').upsert([fallbackPayload]);
+        if (!retryResult.error) {
+          error = null;
+          showToast('Guardado Parcial en Nube', 'El cliente se guardó en Supabase. Ve a Ajustes > "Ver Script SQL" y ejecútalo en Supabase para sincronizar todas las columnas nuevas.', 'info');
+          setCloudStatus({ connected: true, message: 'Supabase (Falta SQL)' });
+          return;
+        }
+      }
+
       if (error) {
         console.warn('Could not save single client to Supabase:', error);
-        showToast('Aviso Supabase', `No se pudo guardar en Supabase: ${error.message || 'Verifica la conexión'}`, 'error');
-        setCloudStatus({ connected: false, message: 'Error de Sincronización' });
+        showToast('Aviso Supabase', `No se pudo guardar en Supabase (${error.message}). Por favor ve a Ajustes > "Ver Script SQL" y ejecútalo en Supabase.`, 'error');
+        setCloudStatus({ connected: false, message: 'Falta ejecutar SQL' });
       } else {
         setCloudStatus({ connected: true, message: 'Supabase Sincronizado' });
       }
@@ -692,84 +738,61 @@ export default function App() {
     showToast('Estatus Removido', `"${st}" retirado de la lista.`, 'info');
   };
 
-  // CSV Export
-  const exportToCSV = () => {
-    let csv = "ID,Vendedor,Agente,numPoliza,Nombres,Estatus,Carrier,Plan,Peso,Altura,Banco,TipoCuenta,Titular,Routing,Cuenta,ActivoDesde,Ingreso,Prima,Telefono,Social,DBO,Edad,Direccion,createdYear\n";
-    clients.forEach(c => {
-      csv += `"${c.id}","${c.vendedor || ''}","${c.agente || ''}","${c.numPoliza || ''}","${c.nombre || ''}","${c.estatus || ''}","${c.carrier || ''}","${c.nombrePlan || ''}","${c.peso || ''}","${c.altura || ''}","${c.bancoNombre || ''}","${c.bancoTipoCuenta || ''}","${c.bancoTitular || ''}","${c.bancoRouting || ''}","${c.bancoCuenta || ''}","${c.mesIngreso || ''}",${c.ingresoMonto || 0},${c.primaMonto || 0},"${c.telefono || ''}","${c.ssn || ''}","${c.dbo || ''}",${c.edad || 0},"${c.direccion || ''}","${c.createdYear || ''}"\n`;
+  // Manejador centralizado de importación de clientes (desde Excel o CSV con columnas separadas)
+  const handleImportClients = (newClients: ClientPolicy[]) => {
+    if (!newClients || newClients.length === 0) return;
+
+    const merged = [...newClients, ...clients];
+    setClients(merged);
+    saveClients(merged);
+
+    // Guardar en la nube Supabase en segundo plano
+    newClients.forEach(c => {
+      saveSingleClientToSupabase(c);
     });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `Polizas_AgenteContigo_${selectedYear}.csv`;
-    link.click();
-    showToast('Exportado', 'Archivo CSV descargado.', 'success');
+
+    showToast(
+      'Importación Exitosa',
+      `${newClients.length} pólizas añadidas al sistema con formato de columnas separadas.`,
+      'success'
+    );
   };
 
-  const importFromCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Exportar a Excel (.xlsx) con columnas canónicas exactamente separadas
+  const exportToExcelOrCSV = () => {
+    try {
+      const yearClients = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
+      exportToExcelFile(yearClients.length > 0 ? yearClients : clients, `Polizas_${selectedYear}_AgenteContigo.xlsx`);
+      showToast('Exportación Exitosa', 'Archivo Excel descargado con todas las columnas organizadas.', 'success');
+    } catch (e: any) {
+      console.error('Error al exportar:', e);
+      showToast('Error', 'No se pudo generar el archivo Excel.', 'error');
+    }
+  };
+
+  // Importar desde archivo Excel (.xlsx, .xls) o CSV
+  const importFromExcelOrCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = e => {
-      const text = e.target?.result as string;
-      const lines = text.split('\n');
-      if (lines.length <= 1) return;
-
-      const newClients: ClientPolicy[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        const cols = lines[i].split(',');
-        if (cols.length >= 4) {
-          const newC: ClientPolicy = {
-            id: 'client-imp-' + Date.now() + '-' + i,
-            vendedor: (cols[1] || 'General').replace(/"/g, ''),
-            numPoliza: (cols[2] || '').replace(/"/g, ''),
-            nombre: (cols[3] || 'Sin Nombre').replace(/"/g, ''),
-            estatus: (cols[4] || 'Activo').replace(/"/g, ''),
-            carrier: (cols[5] || 'Oscar').replace(/"/g, ''),
-            nombrePlan: (cols[6] || '').replace(/"/g, ''),
-            peso: (cols[7] || '').replace(/"/g, ''),
-            altura: (cols[8] || '').replace(/"/g, ''),
-            bancoNombre: (cols[9] || '').replace(/"/g, ''),
-            bancoTipoCuenta: 'Corriente (Checking)',
-            bancoTitular: '',
-            bancoRouting: '',
-            bancoCuenta: '',
-            cuestionarioSalud: {},
-            mesIngreso: (cols[14] || 'Enero').replace(/"/g, ''),
-            docStatus: 'Documento Completos',
-            estatusMigratorio: 'Ciudadano',
-            ingresoFecha: '',
-            ingresoMonto: parseFloat((cols[15] || '0').replace(/"/g, '')) || 0,
-            primaMonto: parseFloat((cols[16] || '0').replace(/"/g, '')) || 0,
-            metodoPago: 'Tarjeta de Crédito',
-            estadoUSA: 'GA',
-            telefono: (cols[17] || '').replace(/"/g, ''),
-            email: '',
-            ssn: (cols[18] || '').replace(/"/g, ''),
-            dbo: (cols[19] || '').replace(/"/g, ''),
-            edad: parseInt(cols[20] || '0') || 0,
-            direccion: (cols[21] || '').replace(/"/g, ''),
-            numDependientes: 0,
-            pagoRealizado: 'TRUE',
-            notas: 'Importado vía CSV',
-            createdDate: new Date().toLocaleDateString(),
-            createdYear: (cols[22] || selectedYear).replace(/"/g, '').trim() || selectedYear,
-            commissions: {}
-          };
-          newClients.push(newC);
-          saveSingleClientToSupabase(newC);
+      try {
+        const buffer = e.target?.result as ArrayBuffer;
+        const { clients: imported } = parseExcelOrCSVBuffer(buffer, selectedYear);
+        if (imported.length === 0) {
+          showToast('Aviso', 'No se encontraron registros de pólizas válidos en el archivo.', 'error');
+          return;
         }
-      }
-
-      if (newClients.length > 0) {
-        const merged = [...newClients, ...clients];
-        setClients(merged);
-        saveClients(merged);
-        showToast('Importación Exitosa', `${newClients.length} pólizas añadidas al sistema.`, 'success');
+        handleImportClients(imported);
+      } catch (err: any) {
+        console.error('Error importando:', err);
+        showToast('Error de Archivo', 'No se pudo procesar el archivo. Asegúrate de que sea Excel o CSV.', 'error');
+      } finally {
+        event.target.value = '';
       }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const copySalesPortalLink = () => {
@@ -1149,27 +1172,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={copySalesPortalLink}
-                  className="w-full py-2 px-3 bg-amber-600/90 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-2 px-3 bg-amber-600/90 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                 >
                   <span>Link Vendedores</span>
                 </button>
-
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <label className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-2.5 rounded-xl text-[11px] font-bold transition border border-slate-700 cursor-pointer flex items-center justify-center gap-1.5">
-                    <Upload className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Importar</span>
-                    <input type="file" accept=".csv" onChange={importFromCSV} className="hidden" />
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={exportToCSV}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2 px-2.5 rounded-xl text-[11px] font-bold transition border border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Exportar</span>
-                  </button>
-                </div>
               </div>
             )}
           </div>
@@ -1237,16 +1243,6 @@ export default function App() {
             </div>
 
             <div className="flex items-center space-x-2">
-              <button
-                type="button"
-                onClick={syncFromSupabase}
-                className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold rounded-xl border border-emerald-300 text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                title="Actualizar desde Supabase"
-              >
-                <RotateCw className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="hidden sm:inline">Sincronizar</span>
-              </button>
-
               {currentRole === 'admin' && (
                 <button
                   type="button"
@@ -1364,6 +1360,8 @@ export default function App() {
                   setIsClientModalOpen(true);
                 }}
                 onRefreshData={syncFromSupabase}
+                onImportClients={handleImportClients}
+                onShowToast={showToast}
               />
             )}
 

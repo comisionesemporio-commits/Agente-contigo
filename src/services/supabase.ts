@@ -240,12 +240,20 @@ export function mapSupabaseRowToCalendarEvent(row: any): CalendarEvent {
 
 export function getSupabaseSetupSQL(): string {
   return `-- ==============================================================
--- SCRIPT SQL OFICIAL PARA SUPERBASE (AGENTE CONTIGO)
--- Copia y pega este script en el 'SQL Editor' de tu panel de Supabase
--- y presiona 'RUN' para crear las tablas con permisos públicos.
+-- SCRIPT SQL DE ACTUALIZACIÓN Y CONFIGURACIÓN (AGENTE CONTIGO)
+-- ==============================================================
+-- Copia TODO este código y pégalo en el 'SQL Editor' de tu panel
+-- de Supabase (https://supabase.com/dashboard/project/kyyddkrqmlohviakcxsg/sql)
+-- y haz clic en el botón verde 'RUN'.
+--
+-- Este script:
+-- 1. Añade las columnas faltantes (enfermedades, metodo_pago, anio, etc.)
+--    a la tabla 'clientes' sin borrar ningún dato que ya tengas.
+-- 2. Crea la tabla 'eventos_calendario' para solucionar el error 404 del calendario.
+-- 3. Habilita los permisos públicos y la sincronización en tiempo real.
 -- ==============================================================
 
--- 1. TABLA: clientes (Pólizas y Expedientes)
+-- 1. CREAR TABLA clientes (SI NO EXISTE)
 CREATE TABLE IF NOT EXISTS public.clientes (
   id TEXT PRIMARY KEY,
   nombre TEXT,
@@ -261,6 +269,19 @@ CREATE TABLE IF NOT EXISTS public.clientes (
   enfermedades TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ACTUALIZAR TABLA clientes SI YA EXISTÍA (Añade columnas faltantes sin perder datos)
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS apellido TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS telefono TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS ssn TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS estado TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS vendedor TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS estatus TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS anio INTEGER;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS direccion TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS metodo_pago TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS enfermedades TEXT;
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 2. TABLA: cotizaciones (Propuestas Médicas Generadas)
 CREATE TABLE IF NOT EXISTS public.cotizaciones (
@@ -307,7 +328,7 @@ CREATE TABLE IF NOT EXISTS public.eventos_calendario (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Desactivar RLS o dar acceso público anónimo para sincronización directa
+-- 5. POLÍTICAS DE ACCESO PÚBLICO (Row Level Security)
 ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cotizaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tareas ENABLE ROW LEVEL SECURITY;
@@ -324,5 +345,17 @@ CREATE POLICY "Public access tareas" ON public.tareas FOR ALL USING (true) WITH 
 
 DROP POLICY IF EXISTS "Public access eventos_calendario" ON public.eventos_calendario;
 CREATE POLICY "Public access eventos_calendario" ON public.eventos_calendario FOR ALL USING (true) WITH CHECK (true);
+
+-- 6. HABILITAR SINCRONIZACIÓN EN TIEMPO REAL (Realtime)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    BEGIN
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.clientes, public.eventos_calendario;
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END;
+  END IF;
+END $$;
 `;
 }

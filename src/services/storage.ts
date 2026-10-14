@@ -549,23 +549,80 @@ export const INITIAL_TASKS: DailyTask[] = [
   }
 ];
 
+// Limpieza y normalización de estatus de clientes
+// Remueve cualquier estatus migratorio (Ciudadanos, Residentes, Permisos, etc.)
+// de la columna de estatus y los marca como 'Activo'
+export function sanitizeClients(clients: ClientPolicy[]): ClientPolicy[] {
+  if (!Array.isArray(clients)) return [];
+  return clients.map(client => {
+    let estatus = String(client.estatus || 'Activo').trim();
+    let estatusMigratorio = client.estatusMigratorio || '';
+
+    const lower = estatus.toLowerCase();
+    const isMigratory = (
+      lower.includes('ciudadan') ||
+      lower.includes('resident') ||
+      lower.includes('permiso') ||
+      lower.includes('parole') ||
+      lower.includes('daca') ||
+      lower.includes('visa') ||
+      lower.includes('asilo') ||
+      lower.includes('tps') ||
+      lower.includes('indocument') ||
+      lower.includes('green card') ||
+      lower.includes('work permit')
+    );
+
+    if (isMigratory) {
+      if (!estatusMigratorio) {
+        estatusMigratorio = estatus;
+      }
+      estatus = 'Activo';
+    } else if (lower === 'activos' || lower === 'active') {
+      estatus = 'Activo';
+    } else if (lower.includes('cancel')) {
+      estatus = 'Cancelado';
+    } else if (lower.includes('rob')) {
+      estatus = 'Robado';
+    } else if (lower === 'nuevo' || lower === 'pendiente' || lower === 'subido / listo') {
+      // Dejar status de trámite tal cual
+    } else if (!estatus || estatus === 'undefined' || estatus === 'null') {
+      estatus = 'Activo';
+    }
+
+    return {
+      ...client,
+      estatus,
+      estatusMigratorio: estatusMigratorio || 'Ciudadano'
+    };
+  });
+}
+
 // Local Storage Helpers
 export function loadClients(): ClientPolicy[] {
   try {
     const raw = localStorage.getItem('polizas_backup_2026');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const cleaned = sanitizeClients(parsed);
+        // Persistir inmediatamente los datos saneados en localStorage
+        try {
+          localStorage.setItem('polizas_backup_2026', JSON.stringify(cleaned));
+        } catch (_) {}
+        return cleaned;
+      }
     }
   } catch (e) {
     console.error("Error loading clients from localStorage:", e);
   }
-  return INITIAL_CLIENTS;
+  return sanitizeClients(INITIAL_CLIENTS);
 }
 
 export function saveClients(clients: ClientPolicy[]) {
   try {
-    localStorage.setItem('polizas_backup_2026', JSON.stringify(clients));
+    const cleaned = sanitizeClients(clients);
+    localStorage.setItem('polizas_backup_2026', JSON.stringify(cleaned));
   } catch (e) {
     console.error("Error saving clients to localStorage:", e);
   }
