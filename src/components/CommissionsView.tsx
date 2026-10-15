@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ClientPolicy, CommissionItem, Agent } from '../types';
 import {
   Lock, Unlock, Calendar, Search, Filter, ChevronDown,
-  DollarSign, CheckCircle2, Clock, TrendingUp, PieChart, Edit
+  DollarSign, CheckCircle2, Clock, TrendingUp, PieChart, Edit,
+  ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, User
 } from 'lucide-react';
-import { MONTHS_LIST } from '../services/storage';
+import { MONTHS_LIST, getCarrierColorStyle, formatShortName } from '../services/storage';
 
 interface CommissionsViewProps {
   clients: ClientPolicy[];
@@ -16,6 +17,7 @@ interface CommissionsViewProps {
   onLock: () => void;
   onOpenPinModal: () => void;
   onOpenMatrixModal: (client: ClientPolicy) => void;
+  onOpenClientModal?: (client: ClientPolicy) => void;
 }
 
 export function getClientCommission(client: ClientPolicy, year: string, month: string): CommissionItem {
@@ -42,7 +44,8 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
   isUnlocked,
   onLock,
   onOpenPinModal,
-  onOpenMatrixModal
+  onOpenMatrixModal,
+  onOpenClientModal
 }) => {
   const [selectedMonth, setSelectedMonth] = useState('TODOS');
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,6 +54,10 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
   const [showSellerMenu, setShowSellerMenu] = useState(false);
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
+
+  // Pagination states matching PoliciesView
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // If locked, render lock invitation screen
   if (!isUnlocked) {
@@ -132,6 +139,19 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
 
     return true;
   });
+
+  // Reset to first page when any search or filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, carrierFilter, selectedSellers, selectedAgents, selectedMonth, selectedYear]);
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const paginatedClients = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return filteredClients.slice(start, start + pageSize);
+  }, [filteredClients, safeCurrentPage, pageSize]);
 
   const displayMonths = selectedMonth === 'TODOS' ? MONTHS_LIST : [selectedMonth];
 
@@ -405,19 +425,19 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
-            <thead className="bg-slate-900 text-slate-200 uppercase font-semibold text-[11px] sticky top-0 whitespace-nowrap">
+            <thead className="bg-slate-900 text-slate-200 uppercase font-bold tracking-wider text-[10px] sticky top-0 whitespace-nowrap">
               <tr>
-                <th className="p-3">Cliente Titular</th>
-                <th className="p-3">Vendedor / Agente</th>
-                <th className="p-3">Compañía</th>
+                <th className="px-3 py-2">Cliente Titular</th>
+                <th className="px-3 py-2">Vendedor / Agente</th>
+                <th className="px-3 py-2">Compañía</th>
                 {displayMonths.map(m => (
-                  <th key={m} className="p-2 text-center">{m.substring(0, 3)}</th>
+                  <th key={m} className="px-1.5 py-2 text-center text-[10px] min-w-[46px]">{m.substring(0, 3)}</th>
                 ))}
-                <th className="p-3 text-right">Total Período</th>
-                <th className="p-3 text-center">Acción</th>
+                <th className="px-3 py-2 text-right">Total Período</th>
+                <th className="px-3 py-2 text-center">Acción</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 font-medium">
+            <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
               {filteredClients.length === 0 ? (
                 <tr>
                   <td colSpan={displayMonths.length + 5} className="p-10 text-center text-slate-400 font-semibold">
@@ -425,31 +445,41 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredClients.map(c => {
+                paginatedClients.map(c => {
                   let rowTotal = 0;
+                  const carrierStyle = getCarrierColorStyle(c.carrier);
 
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50 border-b border-slate-100 text-xs">
-                      <td className="p-3 font-extrabold text-slate-900 whitespace-nowrap">
-                        {c.nombre}
+                    <tr key={c.id} className="hover:bg-slate-50 transition border-b border-slate-100 text-xs">
+                      {/* Cliente Titular: Solo Nombre y Apellido principal */}
+                      <td
+                        className="px-3 py-2 font-bold text-slate-900 whitespace-nowrap cursor-pointer hover:text-emerald-700 transition"
+                        title={`Nombre completo: ${c.nombre || ''} (Haz clic para ver o editar el expediente)`}
+                        onClick={() => onOpenClientModal && onOpenClientModal(c)}
+                      >
+                        <span className="truncate max-w-[140px] sm:max-w-[180px] inline-block align-middle">
+                          {formatShortName(c.nombre)}
+                        </span>
                       </td>
 
-                      <td className="p-3 whitespace-nowrap">
-                        <div className="font-bold text-amber-800 flex items-center gap-1">
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="font-bold text-amber-900 flex items-center gap-1 text-[11px]">
                           <span>👤</span>
-                          <span>{c.vendedor || 'General'}</span>
+                          <span className="truncate max-w-[110px]">{c.vendedor || 'General'}</span>
                         </div>
                         {c.agente && (
                           <div className="text-[10px] font-semibold text-indigo-700 mt-0.5 flex items-center gap-1">
                             <span>🎖️</span>
-                            <span>{c.agente}</span>
+                            <span className="truncate max-w-[110px]">{c.agente}</span>
                           </div>
                         )}
                       </td>
 
-                      <td className="p-3 whitespace-nowrap">
-                        <span className="bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded text-[10px] font-bold">
-                          {c.carrier || 'General'}
+                      {/* Compañía de Seguros con Color Distintivo */}
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold inline-flex items-center gap-1.5 border shadow-2xs ${carrierStyle.badgeClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${carrierStyle.dotColor}`}></span>
+                          <span>{c.carrier || 'General'}</span>
                         </span>
                       </td>
 
@@ -459,7 +489,7 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                         if (comm.paid) rowTotal += amt;
 
                         return (
-                          <td key={m} className="p-1 text-center font-mono text-[10px] whitespace-nowrap">
+                          <td key={m} className="px-1 py-1 text-center font-mono text-[10px] whitespace-nowrap min-w-[46px]">
                             <span
                               className={`border px-1.5 py-0.5 rounded block ${
                                 comm.paid
@@ -473,19 +503,32 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
                         );
                       })}
 
-                      <td className="p-3 text-right font-mono font-black text-emerald-950 whitespace-nowrap bg-emerald-50/40">
+                      <td className="px-3 py-2 text-right font-mono font-black text-emerald-950 whitespace-nowrap bg-emerald-50/40">
                         ${rowTotal.toFixed(2)}
                       </td>
 
-                      <td className="p-3 text-center whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => onOpenMatrixModal(c)}
-                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[11px] transition border border-emerald-200 flex items-center gap-1 mx-auto"
-                        >
-                          <Edit className="w-3 h-3" />
-                          <span>Matriz</span>
-                        </button>
+                      <td className="px-3 py-2 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onOpenMatrixModal(c)}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded text-[11px] transition border border-emerald-200 flex items-center gap-1 cursor-pointer"
+                            title="Editar Matriz de Comisiones"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>Matriz</span>
+                          </button>
+                          {onOpenClientModal && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenClientModal(c)}
+                              className="px-2 py-1 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded text-[11px] transition border border-slate-200 cursor-pointer"
+                              title="Ver expediente completo"
+                            >
+                              Expediente
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -493,6 +536,76 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Bar - Matching Policies View */}
+        <div className="bg-white border-t border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Left: Rows per page */}
+          <div className="flex items-center gap-2 text-slate-700 font-medium">
+            <span className="text-slate-600 font-semibold">Filas por página:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="border border-slate-300 rounded-md px-2.5 py-1 bg-white text-xs font-bold text-slate-700 shadow-2xs hover:border-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={30}>30</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span className="text-slate-400 text-[11px] ml-2 hidden sm:inline">
+              ({filteredClients.length} comisiones en total)
+            </span>
+          </div>
+
+          {/* Right: Controls << < Page X of Y > >> */}
+          <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={safeCurrentPage <= 1}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Primera página"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={safeCurrentPage <= 1}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Página anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <span className="px-3 py-1 text-xs font-semibold text-slate-800 whitespace-nowrap">
+              Página {safeCurrentPage} de {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Página siguiente"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={safeCurrentPage >= totalPages}
+              className="p-1.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer"
+              title="Última página"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

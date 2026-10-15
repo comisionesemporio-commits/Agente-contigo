@@ -19,6 +19,15 @@ export interface CommissionItem {
   notes: string;
 }
 
+export interface DependentItem {
+  id: string;
+  nombre: string;
+  dbo: string; // Fecha de nacimiento MM/DD/YYYY
+  ssn: string; // Social Security Number
+  aplica: boolean; // true = Aplica (Activo), false = No Aplica
+  parentesco?: string;
+}
+
 export interface ClientPolicy {
   id: string;
   vendedor: string;
@@ -52,6 +61,7 @@ export interface ClientPolicy {
   direccion: string;
   numDependientes: number;
   datosDependientes?: string;
+  dependientesList?: DependentItem[];
   pagoRealizado: string; // 'TRUE' | 'FALSE'
   notas: string;
   createdDate: string;
@@ -138,4 +148,21 @@ export interface ToastMessage {
   title: string;
   message: string;
   type: 'success' | 'error' | 'info';
+}
+
+export interface CarrierConfig {
+  id: string;
+  name: string;
+  colorKey: string;
+}
+
+export interface CarrierColorPreset {
+  key: string;
+  name: string;
+  dotColor: string;
+  dotBg: string;
+  badgeClass: string;
+  bg: string;
+  text: string;
+  border: string;
 }

@@ -4,8 +4,11 @@ import {
   Send, Copy, CheckCircle2, MessageSquare, Plus,
   FileCheck, Shield, HeartPulse, User, Phone, MapPin, Building
 } from 'lucide-react';
-import { MONTHS_LIST, formatToUSDate, formatToISODate, calculateAgeFromDBO, formatDateToHumanSpanish } from '../services/storage';
-import { formatShortName } from './PoliciesView';
+import {
+  MONTHS_LIST, formatToUSDate, formatToISODate, calculateAgeFromDBO,
+  formatDateToHumanSpanish, getCarrierColorStyle, getPolicyStatusStyle,
+  calculateActiveMembers, formatShortName
+} from '../services/storage';
 
 interface SalesPortalViewProps {
   currentSeller: string;
@@ -733,7 +736,7 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
               <tr>
                 <th className="px-2.5 py-2">Estatus</th>
                 <th className="px-2.5 py-2">Nombre y apellido</th>
-                <th className="px-2.5 py-2">Personas Activas / Miembros</th>
+                <th className="px-2.5 py-2">Miembro</th>
                 <th className="px-2.5 py-2">Fecha de nacimiento</th>
                 <th className="px-2.5 py-2">Seguro Social</th>
                 <th className="px-2.5 py-2">Compañías de seguros</th>
@@ -756,42 +759,18 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
               ) : (
                 myPolicies.map(c => {
                   const isPaid = String(c.pagoRealizado).toUpperCase() === 'TRUE';
-                  const rawStatus = String(c.estatus || 'Activo').trim();
-                  const lowerEst = rawStatus.toLowerCase();
-                  const isMigratory = (
-                    lowerEst.includes('ciudadan') ||
-                    lowerEst.includes('resident') ||
-                    lowerEst.includes('permiso') ||
-                    lowerEst.includes('parole') ||
-                    lowerEst.includes('daca') ||
-                    lowerEst.includes('visa') ||
-                    lowerEst.includes('asilo') ||
-                    lowerEst.includes('tps') ||
-                    lowerEst.includes('indocument') ||
-                    lowerEst.includes('green card') ||
-                    lowerEst.includes('work permit')
-                  );
-                  const isCancel = !isMigratory && (lowerEst.includes('cancel') || rawStatus === 'Cancelado');
-                  const isActivo = isMigratory || lowerEst === 'activo' || lowerEst === 'activos' || !isCancel;
-
-                  const numDeps = typeof c.numDependientes === 'number' && !isNaN(c.numDependientes) ? c.numDependientes : 0;
-                  const totalMiembros = Math.max(1, numDeps + 1);
+                  const statusStyle = getPolicyStatusStyle(c.estatus);
+                  const carrierStyle = getCarrierColorStyle(c.carrier);
+                  const activeMembers = calculateActiveMembers(c);
 
                   return (
                     <tr key={c.id} className="hover:bg-slate-50 transition">
                       {/* 1. Estatus */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
-                        {isActivo ? (
-                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Activo
-                          </span>
-                        ) : (
-                          <span className="bg-rose-100 text-rose-800 border border-rose-300 px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                            Cancelado
-                          </span>
-                        )}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs border ${statusStyle.badgeClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dotColor}`}></span>
+                          {statusStyle.label}
+                        </span>
                       </td>
 
                       {/* 2. Nombre y apellido */}
@@ -801,10 +780,10 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
                         </span>
                       </td>
 
-                      {/* 3 & 4. Personas Activas / Miembros */}
+                      {/* 3 & 4. Miembro en póliza */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
                         <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">
-                          👥 {totalMiembros} {totalMiembros === 1 ? 'persona activa' : 'personas activas'}
+                          👤 {activeMembers} {activeMembers === 1 ? 'miembro' : 'miembros'}
                         </span>
                       </td>
 
@@ -822,8 +801,9 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
 
                       {/* 7. Compañías de seguros */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
-                        <span className="bg-slate-100 text-slate-900 border border-slate-300 px-2 py-0.5 rounded font-extrabold text-[10px] inline-flex items-center gap-1">
-                          🛡️ {c.carrier || 'General'}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold inline-flex items-center gap-1.5 border shadow-2xs ${carrierStyle.badgeClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${carrierStyle.dotColor}`}></span>
+                          <span>🛡️ {c.carrier || 'General'}</span>
                         </span>
                       </td>
 

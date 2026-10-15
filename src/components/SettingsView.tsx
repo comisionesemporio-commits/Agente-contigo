@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import {
   Sliders, Database, Upload, RefreshCw, Key,
   UserCheck, Building, Tag, Trash2, Plus, Save,
-  FileCode, Check, Copy, ExternalLink, ShieldCheck
+  FileCode, Check, Copy, ExternalLink, ShieldCheck,
+  Building2, Palette, Edit2, X, Sparkles, CheckCircle2,
+  AlertCircle, Info, ChevronDown
 } from 'lucide-react';
-import { getAdminPass, getSellerPass, getMasterPin } from '../services/storage';
+import { getAdminPass, getSellerPass, getMasterPin, CARRIER_COLOR_PRESETS, getCarrierColorPreset, getCarrierColorStyle } from '../services/storage';
 import { getSupabaseSetupSQL } from '../services/supabase';
+import { CarrierConfig, CarrierColorPreset } from '../types';
 
 interface SettingsViewProps {
   supabaseUrl: string;
@@ -18,9 +21,14 @@ interface SettingsViewProps {
   customSellers: string[];
   customCarriers: string[];
   customStatuses: string[];
+  carrierConfigs?: CarrierConfig[];
+  clientsCountByCarrier?: Record<string, number>;
   onAddSeller: (seller: string) => void;
   onRemoveSeller: (seller: string) => void;
   onAddCarrier: (carrier: string) => void;
+  onAddCarrierWithColor?: (name: string, colorKey: string) => void;
+  onUpdateCarrierName?: (oldName: string, newName: string) => void;
+  onUpdateCarrierColor?: (carrierName: string, newColorKey: string) => void;
   onRemoveCarrier: (carrier: string) => void;
   onAddStatus: (status: string) => void;
   onRemoveStatus: (status: string) => void;
@@ -38,9 +46,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   customSellers,
   customCarriers,
   customStatuses,
+  carrierConfigs = [],
+  clientsCountByCarrier = {},
   onAddSeller,
   onRemoveSeller,
   onAddCarrier,
+  onAddCarrierWithColor,
+  onUpdateCarrierName,
+  onUpdateCarrierColor,
   onRemoveCarrier,
   onAddStatus,
   onRemoveStatus,
@@ -60,7 +73,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   // Catalog inputs
   const [newSellerInput, setNewSellerInput] = useState('');
   const [newCarrierInput, setNewCarrierInput] = useState('');
+  const [selectedColorKey, setSelectedColorKey] = useState('orange');
   const [newStatusInput, setNewStatusInput] = useState('');
+
+  // Editing carrier state
+  const [editingCarrierId, setEditingCarrierId] = useState<string | null>(null);
+  const [editingCarrierName, setEditingCarrierName] = useState('');
+  const [openColorPickerId, setOpenColorPickerId] = useState<string | null>(null);
 
   const handleSaveSupabase = (e: React.FormEvent) => {
     e.preventDefault();
@@ -301,8 +320,293 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </form>
       </div>
 
-      {/* 4. CATÁLOGOS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
+      {/* 4. GESTIÓN AVANZADA DE COMPAÑÍAS DE SEGUROS Y COLORES */}
+      <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-4 text-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
+          <div>
+            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-emerald-600" />
+              <span>Compañías de Seguros & Colores de Etiquetas</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Personaliza el nombre y color distintivo de cada aseguradora en las tablas y expedientes.
+            </p>
+          </div>
+          <span className="text-[11px] bg-emerald-50 text-emerald-800 font-extrabold px-3 py-1 rounded-full border border-emerald-200 self-start sm:self-auto">
+            {carrierConfigs.length > 0 ? carrierConfigs.length : customCarriers.length} Aseguradoras Registradas
+          </span>
+        </div>
+
+        {/* Info Banner sobre Auto-Registro */}
+        <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 flex items-start gap-2.5">
+          <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="text-[11px] text-emerald-950 leading-relaxed">
+            <strong className="font-black">Auto-registro inteligente:</strong> Si ingresas una nueva aseguradora al llenar la planilla de un cliente (por ejemplo, <em>"Imperial"</em>) o al subir un archivo Excel/CSV, <strong>se registrará automáticamente aquí</strong> con un color asignado para que puedas cambiarle el nombre o tono cuando desees.
+          </div>
+        </div>
+
+        {/* Formulario para Agregar Nueva Aseguradora */}
+        <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3">
+          <span className="font-extrabold text-slate-800 uppercase tracking-wider block text-[10px]">
+            + Registrar Nueva Compañía de Seguros
+          </span>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            {/* Input Nombre */}
+            <div className="md:col-span-5">
+              <label className="block font-bold text-slate-700 uppercase mb-1 text-[10px]">
+                Nombre de la Aseguradora
+              </label>
+              <input
+                type="text"
+                value={newCarrierInput}
+                onChange={e => setNewCarrierInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (newCarrierInput.trim()) {
+                      if (onAddCarrierWithColor) {
+                        onAddCarrierWithColor(newCarrierInput.trim(), selectedColorKey);
+                      } else {
+                        onAddCarrier(newCarrierInput.trim());
+                      }
+                      setNewCarrierInput('');
+                    }
+                  }
+                }}
+                placeholder="Ej: Imperial Insurance, CareSource, Bright Health..."
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold bg-white text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Selector de Color */}
+            <div className="md:col-span-4">
+              <label className="block font-bold text-slate-700 uppercase mb-1 text-[10px] flex items-center gap-1">
+                <Palette className="w-3 h-3 text-indigo-600" />
+                Color de Etiqueta
+              </label>
+              <select
+                value={selectedColorKey}
+                onChange={e => setSelectedColorKey(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-bold bg-white text-slate-900 cursor-pointer focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              >
+                {CARRIER_COLOR_PRESETS.map(preset => (
+                  <option key={preset.key} value={preset.key}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Botón Agregar */}
+            <div className="md:col-span-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!newCarrierInput.trim()) {
+                    onShowToast("Nombre Requerido", "Por favor ingresa el nombre de la compañía aseguradora.", "info");
+                    return;
+                  }
+                  if (onAddCarrierWithColor) {
+                    onAddCarrierWithColor(newCarrierInput.trim(), selectedColorKey);
+                  } else {
+                    onAddCarrier(newCarrierInput.trim());
+                  }
+                  setNewCarrierInput('');
+                }}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar Compañía</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Vista previa en vivo */}
+          {newCarrierInput.trim() && (
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[11px] text-slate-500 font-semibold">Vista previa en tablas:</span>
+              {(() => {
+                const preset = getCarrierColorPreset(selectedColorKey);
+                return (
+                  <span className={`px-2.5 py-0.5 rounded text-[11px] font-black inline-flex items-center gap-1.5 border shadow-2xs ${preset.badgeClass}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${preset.dotColor}`}></span>
+                    <span>🛡️ {newCarrierInput.trim()}</span>
+                  </span>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+
+        {/* Listado y Edición de Compañías Existentes */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[10px]">
+              Aseguradoras en el Sistema (Haz clic en el color o en el nombre para modificar)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {(carrierConfigs.length > 0 ? carrierConfigs : customCarriers.map(c => ({ id: c, name: c, colorKey: 'orange' }))).map(item => {
+              const currentPreset = getCarrierColorPreset(item.colorKey);
+              const isEditing = editingCarrierId === item.id;
+              const count = clientsCountByCarrier[item.name.toLowerCase()] || 0;
+              const isPickerOpen = openColorPickerId === item.id;
+
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 bg-slate-50 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-xl transition shadow-2xs flex flex-col justify-between space-y-2 relative"
+                >
+                  {/* Top: Nombre de Compañía con Edición */}
+                  <div className="flex items-center justify-between gap-1.5">
+                    {isEditing ? (
+                      <div className="flex items-center gap-1 flex-1">
+                        <input
+                          type="text"
+                          value={editingCarrierName}
+                          autoFocus
+                          onChange={e => setEditingCarrierName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              if (editingCarrierName.trim()) {
+                                if (onUpdateCarrierName) {
+                                  onUpdateCarrierName(item.name, editingCarrierName.trim());
+                                }
+                                setEditingCarrierId(null);
+                              }
+                            } else if (e.key === 'Escape') {
+                              setEditingCarrierId(null);
+                            }
+                          }}
+                          className="w-full border border-emerald-400 rounded px-2 py-1 text-xs font-black bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editingCarrierName.trim()) {
+                              if (onUpdateCarrierName) {
+                                onUpdateCarrierName(item.name, editingCarrierName.trim());
+                              }
+                              setEditingCarrierId(null);
+                            }
+                          }}
+                          className="p-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded cursor-pointer"
+                          title="Guardar nuevo nombre"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingCarrierId(null)}
+                          className="p-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded cursor-pointer"
+                          title="Cancelar"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 truncate">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-black inline-flex items-center gap-1.5 border shadow-2xs truncate ${currentPreset.badgeClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${currentPreset.dotColor}`}></span>
+                          <span className="truncate">{item.name}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCarrierId(item.id);
+                            setEditingCarrierName(item.name);
+                          }}
+                          className="text-slate-400 hover:text-slate-700 p-1 transition cursor-pointer"
+                          title="Cambiar nombre de esta compañía"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Botón Borrar */}
+                    <button
+                      type="button"
+                      onClick={() => onRemoveCarrier(item.name)}
+                      className="text-slate-400 hover:text-rose-600 p-1 transition cursor-pointer shrink-0"
+                      title="Eliminar compañía"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Bottom: Selector de Color y Conteo */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    {/* Botón para cambiar color */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setOpenColorPickerId(isPickerOpen ? null : item.id)}
+                        className="flex items-center gap-1.5 text-[10px] font-extrabold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 px-2 py-1 rounded-md shadow-2xs cursor-pointer transition"
+                        title="Haz clic para cambiar el color de esta aseguradora"
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: currentPreset.dotBg }}></span>
+                        <span>{currentPreset.name.split('/')[0]}</span>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                      </button>
+
+                      {/* Menú Flotante de Selección de Color */}
+                      {isPickerOpen && (
+                        <div className="absolute left-0 bottom-8 z-30 bg-white border border-slate-300 rounded-xl shadow-xl p-2.5 w-52 space-y-2">
+                          <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                            <span className="text-[10px] font-black uppercase text-slate-800">
+                              Elegir color para {item.name}:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setOpenColorPickerId(null)}
+                              className="text-slate-400 hover:text-slate-700"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto p-0.5">
+                            {CARRIER_COLOR_PRESETS.map(preset => (
+                              <button
+                                key={preset.key}
+                                type="button"
+                                onClick={() => {
+                                  if (onUpdateCarrierColor) {
+                                    onUpdateCarrierColor(item.name, preset.key);
+                                  }
+                                  setOpenColorPickerId(null);
+                                }}
+                                className={`p-1 rounded-lg border flex flex-col items-center justify-center gap-0.5 text-[9px] font-bold transition cursor-pointer ${
+                                  preset.key === item.colorKey
+                                    ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-500'
+                                    : 'border-slate-200 hover:bg-slate-50'
+                                }`}
+                                title={preset.name}
+                              >
+                                <span className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: preset.dotBg }}></span>
+                                <span className="truncate max-w-[42px]">{preset.name.split(' ')[0]}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      {count > 0 ? `${count} ${count === 1 ? 'póliza' : 'pólizas'}` : '0 pólizas'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 5. OTROS CATÁLOGOS: VENDEDORES Y ESTATUS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
         {/* Sellers */}
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
           <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
@@ -346,54 +650,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        {/* Carriers */}
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-            <Building className="w-4 h-4 text-emerald-600" />
-            Compañías
-          </h3>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={newCarrierInput}
-              onChange={e => setNewCarrierInput(e.target.value)}
-              placeholder="Nueva compañía..."
-              className="flex-1 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold bg-white"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (newCarrierInput.trim()) {
-                  onAddCarrier(newCarrierInput.trim());
-                  setNewCarrierInput('');
-                }
-              }}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              + Agregar
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5 pt-2">
-            {customCarriers.map(car => (
-              <span key={car} className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 flex items-center shadow-sm">
-                {car}
-                <button
-                  type="button"
-                  onClick={() => onRemoveCarrier(car)}
-                  className="ml-2 text-rose-500 hover:text-rose-700 transition cursor-pointer"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-
         {/* Statuses */}
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
           <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
             <Tag className="w-4 h-4 text-cyan-600" />
-            Estatus
+            Estatus de Pólizas
           </h3>
           <div className="flex space-x-2">
             <input

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  ClientPolicy, Agent, DailyTask, Role, ToastMessage, CommissionItem, CalendarEvent
+  ClientPolicy, Agent, DailyTask, Role, ToastMessage, CommissionItem, CalendarEvent, CarrierConfig
 } from './types';
 import {
   MONTHS_LIST, DEFAULT_SELLERS, DEFAULT_CARRIERS, DEFAULT_STATUSES,
   loadClients, saveClients, sanitizeClients, loadTasks, saveTasks, loadAgents, saveAgents,
-  loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO
+  loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO,
+  loadCarrierConfigs, saveCarrierConfigs, autoRegisterCarriersFromClients, autoRegisterSingleCarrier
 } from './services/storage';
 import {
   initSupabase, mapClientToSupabaseRow, mapSupabaseRowToClient, getSupabaseConfig,
@@ -73,13 +74,8 @@ export default function App() {
     return DEFAULT_SELLERS;
   });
 
-  const [customCarriers, setCustomCarriers] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('polizas_custom_carriers');
-      if (stored) return JSON.parse(stored);
-    } catch (e) {}
-    return DEFAULT_CARRIERS;
-  });
+  const [carrierConfigs, setCarrierConfigs] = useState<CarrierConfig[]>(loadCarrierConfigs);
+  const customCarriers = useMemo(() => carrierConfigs.map(c => c.name), [carrierConfigs]);
 
   const [customStatuses, setCustomStatuses] = useState<string[]>(() => {
     try {
@@ -92,6 +88,28 @@ export default function App() {
   // Data
   const [clients, setClients] = useState<ClientPolicy[]>(loadClients);
   const [tasks, setTasks] = useState<DailyTask[]>(loadTasks);
+
+  // Conteo de pólizas activas por aseguradora
+  const clientsCountByCarrier = useMemo(() => {
+    const map: Record<string, number> = {};
+    clients.forEach(c => {
+      if (c.carrier) {
+        const lower = c.carrier.trim().toLowerCase();
+        map[lower] = (map[lower] || 0) + 1;
+      }
+    });
+    return map;
+  }, [clients]);
+
+  // Auto-registrar en la configuración cualquier aseguradora presente en las pólizas subidas o importadas
+  useEffect(() => {
+    if (clients.length > 0) {
+      const { configs, newAddedCount } = autoRegisterCarriersFromClients(clients, carrierConfigs);
+      if (newAddedCount > 0) {
+        setCarrierConfigs(configs);
+      }
+    }
+  }, [clients]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(loadCalendarEvents);
   const [agents, setAgents] = useState<Agent[]>(loadAgents);
 
@@ -272,6 +290,21 @@ export default function App() {
     } catch (err: any) {
       console.warn('Supabase sync notice:', err);
       setCloudStatus({ connected: false, message: 'Supabase (Modo Local)' });
+    }
+  };
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    showToast('Sincronizando...', 'Actualizando base de datos desde la nube...', 'info');
+    try {
+      await syncFromSupabase();
+      showToast('Sincronización Exitosa', 'Base de datos y registros actualizados.', 'success');
+    } catch (e) {
+      showToast('Sincronización Local', 'Datos locales verificados y actualizados.', 'info');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -510,6 +543,15 @@ export default function App() {
 
     setClients(updated);
     saveClients(updated);
+
+    // Auto-registrar la aseguradora en configuración si es nueva (ej. Imperial)
+    if (fullClient.carrier?.trim()) {
+      const { configs, newAdded } = autoRegisterSingleCarrier(fullClient.carrier.trim(), carrierConfigs);
+      if (newAdded) {
+        setCarrierConfigs(configs);
+      }
+    }
+
     setIsClientModalOpen(false);
     setEditingClient(null);
     showToast('Guardado', `Expediente de ${fullClient.nombre} actualizado.`, 'success');
@@ -709,17 +751,82 @@ export default function App() {
   };
 
   const handleAddCarrier = (c: string) => {
-    if (!customCarriers.includes(c)) {
-      const updated = [...customCarriers, c];
-      setCustomCarriers(updated);
-      localStorage.setItem('polizas_custom_carriers', JSON.stringify(updated));
+    const { configs, newAdded } = autoRegisterSingleCarrier(c, carrierConfigs);
+    if (newAdded) {
+      setCarrierConfigs(configs);
+      showToast('Compañía Agregada', `"${c.trim()}" agregada al catálogo.`, 'success');
     }
   };
 
+  const handleAddCarrierWithColor = (name: string, colorKey: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    const exists = carrierConfigs.some(car => car.name.toLowerCase() === clean.toLowerCase());
+    if (exists) {
+      showToast('Aviso', `La compañía "${clean}" ya existe en el sistema.`, 'info');
+      return;
+    }
+    const newConfig: CarrierConfig = {
+      id: 'car-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      name: clean,
+      colorKey
+    };
+    const updated = [...carrierConfigs, newConfig];
+    setCarrierConfigs(updated);
+    saveCarrierConfigs(updated);
+    showToast('Compañía Agregada', `"${clean}" registrada con éxito.`, 'success');
+  };
+
+  const handleUpdateCarrierName = (oldName: string, newName: string) => {
+    const cleanOld = oldName.trim();
+    const cleanNew = newName.trim();
+    if (!cleanNew || cleanNew.toLowerCase() === cleanOld.toLowerCase()) return;
+
+    const updatedConfigs = carrierConfigs.map(c => (
+      c.name.toLowerCase() === cleanOld.toLowerCase() ? { ...c, name: cleanNew } : c
+    ));
+    setCarrierConfigs(updatedConfigs);
+    saveCarrierConfigs(updatedConfigs);
+
+    // Actualizar nombre en todas las pólizas vinculadas
+    let updatedClientsCount = 0;
+    const updatedClients = clients.map(client => {
+      if ((client.carrier || '').toLowerCase() === cleanOld.toLowerCase()) {
+        updatedClientsCount++;
+        return { ...client, carrier: cleanNew };
+      }
+      return client;
+    });
+
+    if (updatedClientsCount > 0) {
+      setClients(updatedClients);
+      saveClients(updatedClients);
+      // Guardar cambios en Supabase en segundo plano
+      updatedClients.filter(c => (c.carrier || '').toLowerCase() === cleanNew.toLowerCase()).forEach(c => {
+        saveSingleClientToSupabase(c);
+      });
+    }
+
+    showToast(
+      'Compañía Renombrada',
+      `"${cleanOld}" ahora es "${cleanNew}". ${updatedClientsCount > 0 ? `Se actualizaron ${updatedClientsCount} pólizas asociadas.` : ''}`,
+      'success'
+    );
+  };
+
+  const handleUpdateCarrierColor = (carrierName: string, newColorKey: string) => {
+    const updated = carrierConfigs.map(c => (
+      c.name.toLowerCase() === carrierName.toLowerCase() ? { ...c, colorKey: newColorKey } : c
+    ));
+    setCarrierConfigs(updated);
+    saveCarrierConfigs(updated);
+    showToast('Color Actualizado', `Color distintivo de "${carrierName}" actualizado correctamente.`, 'success');
+  };
+
   const handleRemoveCarrier = (c: string) => {
-    const updated = customCarriers.filter(x => x !== c);
-    setCustomCarriers(updated);
-    localStorage.setItem('polizas_custom_carriers', JSON.stringify(updated));
+    const updated = carrierConfigs.filter(x => x.name.toLowerCase() !== c.toLowerCase());
+    setCarrierConfigs(updated);
+    saveCarrierConfigs(updated);
     showToast('Compañía Removida', `"${c}" retirada de la lista.`, 'info');
   };
 
@@ -741,6 +848,12 @@ export default function App() {
   // Manejador centralizado de importación de clientes (desde Excel o CSV con columnas separadas)
   const handleImportClients = (newClients: ClientPolicy[]) => {
     if (!newClients || newClients.length === 0) return;
+
+    // Auto-registrar compañías de las pólizas importadas si son nuevas
+    const { configs, newAddedCount } = autoRegisterCarriersFromClients(newClients, carrierConfigs);
+    if (newAddedCount > 0) {
+      setCarrierConfigs(configs);
+    }
 
     const merged = [...newClients, ...clients];
     setClients(merged);
@@ -1243,6 +1356,19 @@ export default function App() {
             </div>
 
             <div className="flex items-center space-x-2">
+              {/* Botón de Sincronización Manual */}
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition border border-slate-700 shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                title="Sincronizar de inmediato y refrescar base de datos"
+              >
+                <RotateCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+                <span className="sm:hidden">{isSyncing ? '...' : 'Sinc'}</span>
+              </button>
+
               {currentRole === 'admin' && (
                 <button
                   type="button"
@@ -1359,7 +1485,8 @@ export default function App() {
                   setEditingClient(client);
                   setIsClientModalOpen(true);
                 }}
-                onRefreshData={syncFromSupabase}
+                onRefreshData={handleManualSync}
+                onUpdateStatus={handleUpdatePolicyStatus}
                 onImportClients={handleImportClients}
                 onShowToast={showToast}
               />
@@ -1393,6 +1520,10 @@ export default function App() {
                 onOpenMatrixModal={client => {
                   setMatrixClient(client);
                   setIsMatrixModalOpen(true);
+                }}
+                onOpenClientModal={client => {
+                  setEditingClient(client);
+                  setIsClientModalOpen(true);
                 }}
               />
             )}
@@ -1481,9 +1612,14 @@ export default function App() {
                 customSellers={customSellers}
                 customCarriers={customCarriers}
                 customStatuses={customStatuses}
+                carrierConfigs={carrierConfigs}
+                clientsCountByCarrier={clientsCountByCarrier}
                 onAddSeller={handleAddSeller}
                 onRemoveSeller={handleRemoveSeller}
                 onAddCarrier={handleAddCarrier}
+                onAddCarrierWithColor={handleAddCarrierWithColor}
+                onUpdateCarrierName={handleUpdateCarrierName}
+                onUpdateCarrierColor={handleUpdateCarrierColor}
                 onRemoveCarrier={handleRemoveCarrier}
                 onAddStatus={handleAddStatus}
                 onRemoveStatus={handleRemoveStatus}

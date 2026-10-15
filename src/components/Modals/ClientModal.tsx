@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { ClientPolicy, HealthQuestions, Agent } from '../../types';
+import { ClientPolicy, HealthQuestions, Agent, DependentItem } from '../../types';
 import {
   X, UserPen, RotateCw, Trash2, Save,
-  Building, Phone, MapPin, HeartPulse, User, Calendar
+  Building, Phone, MapPin, HeartPulse, User, Calendar, Users, Plus, Shield
 } from 'lucide-react';
 import {
   MONTHS_LIST, formatToUSDate, formatToISODate, formatDateToHumanSpanish,
-  calculateAgeFromDBO, getCurrentFormattedDateAndYear
+  calculateAgeFromDBO, getCurrentFormattedDateAndYear, getCarrierColorStyle, getPolicyStatusStyle
 } from '../../services/storage';
 
 interface ClientModalProps {
@@ -42,10 +42,38 @@ export const ClientModal: React.FC<ClientModalProps> = ({
     if (client) {
       const usDbo = formatToUSDate(client.dbo);
       const calculatedAge = client.edad || calculateAgeFromDBO(usDbo);
+
+      let deps: DependentItem[] = [];
+      if (Array.isArray(client.dependientesList) && client.dependientesList.length > 0) {
+        deps = client.dependientesList;
+      } else if (client.datosDependientes) {
+        try {
+          const parsed = JSON.parse(client.datosDependientes);
+          if (Array.isArray(parsed)) deps = parsed;
+        } catch (_) {}
+      }
+
+      if (deps.length === 0 && (client.numDependientes || 0) > 0) {
+        for (let i = 0; i < (client.numDependientes || 0); i++) {
+          deps.push({
+            id: `dep_${Date.now()}_${i}`,
+            nombre: `Dependiente ${i + 1}`,
+            dbo: '',
+            ssn: '',
+            aplica: true,
+            parentesco: 'Dependiente'
+          });
+        }
+      }
+
+      const activeDepsCount = deps.filter(d => d.aplica !== false).length;
+
       setFormData({
         ...client,
         dbo: usDbo,
         edad: calculatedAge,
+        dependientesList: deps,
+        numDependientes: activeDepsCount,
         agente: client.agente || client.vendedor || 'General'
       });
     } else {
@@ -87,6 +115,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
         edad: 0,
         direccion: '',
         numDependientes: 0,
+        dependientesList: [],
+        datosDependientes: '[]',
         pagoRealizado: 'TRUE',
         notas: ''
       });
@@ -115,6 +145,55 @@ export const ClientModal: React.FC<ClientModalProps> = ({
     }
   };
 
+  const addDependent = () => {
+    const newDep: DependentItem = {
+      id: 'dep_' + Date.now(),
+      nombre: '',
+      dbo: '',
+      ssn: '',
+      aplica: true,
+      parentesco: 'Dependiente'
+    };
+    const updated = [...(formData.dependientesList || []), newDep];
+    const activeCount = updated.filter(d => d.aplica !== false).length;
+    setFormData(prev => ({
+      ...prev,
+      dependientesList: updated,
+      datosDependientes: JSON.stringify(updated),
+      numDependientes: activeCount
+    }));
+  };
+
+  const updateDependent = (index: number, field: keyof DependentItem, value: any) => {
+    const current = [...(formData.dependientesList || [])];
+    if (!current[index]) return;
+    current[index] = { ...current[index], [field]: value };
+    const activeCount = current.filter(d => d.aplica !== false).length;
+    setFormData(prev => ({
+      ...prev,
+      dependientesList: current,
+      datosDependientes: JSON.stringify(current),
+      numDependientes: activeCount
+    }));
+  };
+
+  const removeDependent = (index: number) => {
+    const current = [...(formData.dependientesList || [])];
+    current.splice(index, 1);
+    const activeCount = current.filter(d => d.aplica !== false).length;
+    setFormData(prev => ({
+      ...prev,
+      dependientesList: current,
+      datosDependientes: JSON.stringify(current),
+      numDependientes: activeCount
+    }));
+  };
+
+  const statusLower = String(formData.estatus || 'Activo').toLowerCase();
+  const isTitularActive = !statusLower.includes('cancel') && !statusLower.includes('rob') && !statusLower.includes('inactiv') && !statusLower.includes('no vigent');
+  const activeDepsCount = (formData.dependientesList || []).filter(d => d.aplica !== false).length;
+  const liveTotalMembers = (isTitularActive ? 1 : 0) + activeDepsCount;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.nombre?.trim()) return;
@@ -122,12 +201,16 @@ export const ClientModal: React.FC<ClientModalProps> = ({
     const usDbo = formatToUSDate(formData.dbo);
     const calcAge = formData.edad || calculateAgeFromDBO(usDbo);
     const todayUS = getCurrentFormattedDateAndYear().dateUS;
+    const activeDeps = (formData.dependientesList || []).filter(d => d.aplica !== false).length;
 
     const finalClient: ClientPolicy = {
       ...(formData as ClientPolicy),
       id: formData.id || ('client-' + Date.now()),
       dbo: usDbo,
       edad: calcAge,
+      numDependientes: activeDeps,
+      datosDependientes: JSON.stringify(formData.dependientesList || []),
+      dependientesList: formData.dependientesList || [],
       ingresoFecha: formData.ingresoFecha ? formatToUSDate(formData.ingresoFecha) : todayUS,
       createdDate: formData.createdDate ? formatToUSDate(formData.createdDate) : todayUS,
       createdYear: formData.createdYear || selectedYear
@@ -329,14 +412,22 @@ export const ClientModal: React.FC<ClientModalProps> = ({
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block font-bold text-slate-700 uppercase mb-1">Compañía</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-bold text-slate-700 uppercase">Compañía de Seguros</label>
+                  {formData.carrier && (
+                    <span className={`px-2 py-0.5 rounded text-[10px] ${getCarrierColorStyle(formData.carrier).badgeClass} flex items-center gap-1`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${getCarrierColorStyle(formData.carrier).dotColor}`}></span>
+                      {formData.carrier}
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
                   list="client-modal-carriers"
                   value={formData.carrier || ''}
                   onChange={e => handleChange('carrier', e.target.value)}
                   placeholder="Escribe o selecciona..."
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold bg-white"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold bg-white text-slate-900"
                 />
                 <datalist id="client-modal-carriers">
                   {customCarriers.map(car => (
@@ -369,6 +460,120 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                 className="w-full border border-indigo-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold bg-white text-indigo-950"
               />
             </div>
+          </div>
+
+          {/* Gestión de Dependientes del Expediente */}
+          <div className="p-4 bg-purple-50/70 border-2 border-purple-200 rounded-2xl space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-200 pb-2">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-purple-700" />
+                <h4 className="font-black text-purple-950 uppercase text-xs">
+                  Dependientes de la Póliza
+                </h4>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-purple-200 text-purple-950 border border-purple-300 shadow-2xs">
+                  👤 {liveTotalMembers} {liveTotalMembers === 1 ? 'miembro' : 'miembros'} en total
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={addDependent}
+                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Agregar Dependiente</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-purple-900">
+              <span>
+                Titular: {isTitularActive ? '🟢 Activo (Suma 1)' : '🔴 Inactivo / Cancelado (Suma 0)'} • Dependientes que aplican: <strong>{activeDepsCount}</strong>
+              </span>
+              <span className="text-slate-500 text-[10px]">
+                * Los dependientes que "No Aplican" no se suman en los miembros activos
+              </span>
+            </div>
+
+            {(!formData.dependientesList || formData.dependientesList.length === 0) ? (
+              <div className="p-4 bg-white/80 border border-dashed border-purple-300 rounded-xl text-center text-xs text-purple-800 font-medium">
+                No hay dependientes registrados en este expediente. Pulsa el botón <strong>"+ Agregar Dependiente"</strong> para añadir los miembros de la familia.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {formData.dependientesList.map((dep, idx) => (
+                  <div key={dep.id || idx} className="p-3 bg-white border border-purple-200 rounded-xl shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">
+                      <span className="flex items-center gap-2 text-purple-950">
+                        <span>👤 Dependiente #{idx + 1}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${dep.aplica ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>
+                          {dep.aplica ? '✓ Aplica Cobertura' : '✗ No Aplica'}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeDependent(idx)}
+                        className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                        title="Eliminar dependiente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Quitar</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
+                      {/* Nombre */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 uppercase mb-0.5">Nombre y Apellido</label>
+                        <input
+                          type="text"
+                          value={dep.nombre || ''}
+                          onChange={e => updateDependent(idx, 'nombre', e.target.value)}
+                          placeholder="Nombre y apellido"
+                          className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {/* Fecha de nacimiento */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 uppercase mb-0.5">Fecha Nac. (MM/DD/YYYY)</label>
+                        <input
+                          type="text"
+                          value={dep.dbo || ''}
+                          onChange={e => updateDependent(idx, 'dbo', e.target.value)}
+                          placeholder="MM/DD/YYYY"
+                          maxLength={10}
+                          className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {/* Social (SSN) */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 uppercase mb-0.5">Seguro Social (SSN)</label>
+                        <input
+                          type="text"
+                          value={dep.ssn || ''}
+                          onChange={e => updateDependent(idx, 'ssn', e.target.value)}
+                          placeholder="000-00-0000"
+                          className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      {/* Aplica o No Aplica */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-700 uppercase mb-0.5">¿Aplica Cobertura?</label>
+                        <select
+                          value={dep.aplica ? 'true' : 'false'}
+                          onChange={e => updateDependent(idx, 'aplica', e.target.value === 'true')}
+                          className={`w-full border rounded-lg px-2 py-1.5 text-xs font-black cursor-pointer ${dep.aplica ? 'bg-emerald-50 text-emerald-900 border-emerald-300' : 'bg-rose-50 text-rose-900 border-rose-300'}`}
+                        >
+                          <option value="true">🟢 Sí Aplica (Activo)</option>
+                          <option value="false">🔴 No Aplica (Inactivo)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Physical Attributes */}
@@ -596,13 +801,19 @@ export const ClientModal: React.FC<ClientModalProps> = ({
           {/* Status, Seller, Agent & Policy Number */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 uppercase mb-1">Estatus Póliza</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700 uppercase">Estatus Póliza</label>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${getPolicyStatusStyle(formData.estatus).badgeClass} flex items-center gap-1`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${getPolicyStatusStyle(formData.estatus).dotColor}`}></span>
+                  {getPolicyStatusStyle(formData.estatus).label}
+                </span>
+              </div>
               <select
                 value={formData.estatus || 'Activo'}
                 onChange={e => handleChange('estatus', e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-bold bg-white"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-black bg-white cursor-pointer focus:ring-2 focus:ring-emerald-500"
               >
-                {customStatuses.map(st => (
+                {Array.from(new Set(['Activo', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'En Proceso', 'Cancelado', 'Robado', ...(customStatuses || [])])).map(st => (
                   <option key={st} value={st}>{st}</option>
                 ))}
               </select>

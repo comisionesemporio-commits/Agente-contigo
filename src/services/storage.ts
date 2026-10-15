@@ -1,4 +1,4 @@
-import { ClientPolicy, Agent, DailyTask, CalendarEvent } from '../types';
+import { ClientPolicy, Agent, DailyTask, CalendarEvent, CarrierConfig, CarrierColorPreset } from '../types';
 
 export const MONTHS_LIST = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -14,7 +14,7 @@ export const DEFAULT_CARRIERS = [
 ];
 
 export const DEFAULT_STATUSES = [
-  "Nuevo", "Subido / Listo", "Pendiente", "Activo", "Cancelado", "Robado"
+  "Activo", "Cotizado", "Nuevo", "Subido / Listo", "Pendiente", "En Proceso", "Cancelado", "Robado"
 ];
 
 export const DEFAULT_SUPABASE_URL = "https://kyyddkrqmlohviakcxsg.supabase.co";
@@ -549,9 +549,462 @@ export const INITIAL_TASKS: DailyTask[] = [
   }
 ];
 
+// Formatea nombres largos para mostrar limpiamente Nombre y Apellido principal
+export function formatShortName(rawName?: string): string {
+  if (!rawName) return '';
+  const name = rawName.trim();
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return name;
+
+  // Si tiene 3 nombres (ej: Juan Carlos Pérez) -> Juan Pérez
+  if (parts.length === 3) {
+    return `${parts[0]} ${parts[2]}`;
+  }
+  // Si tiene 4 nombres (ej: María Elena Gómez Fernández) -> María Gómez
+  return `${parts[0]} ${parts[2] || parts[1]}`;
+}
+
+// Estilos y colores distintivos por Compañía de Seguros
+export interface CarrierColorStyle {
+  bg: string;
+  text: string;
+  border: string;
+  badgeClass: string;
+  dotColor: string;
+}
+
+export const CARRIER_COLOR_PRESETS: CarrierColorPreset[] = [
+  { key: 'emerald', name: 'Verde Esmeralda', dotColor: 'bg-emerald-600', dotBg: '#059669', badgeClass: 'bg-emerald-100 text-emerald-950 border-emerald-400 shadow-2xs font-black', bg: 'bg-emerald-100', text: 'text-emerald-950', border: 'border-emerald-400' },
+  { key: 'cyan', name: 'Cyan / Turquesa', dotColor: 'bg-cyan-600', dotBg: '#0891b2', badgeClass: 'bg-cyan-100 text-cyan-950 border-cyan-400 shadow-2xs font-black', bg: 'bg-cyan-100', text: 'text-cyan-950', border: 'border-cyan-400' },
+  { key: 'blue', name: 'Azul Real', dotColor: 'bg-blue-600', dotBg: '#2563eb', badgeClass: 'bg-blue-100 text-blue-950 border-blue-400 shadow-2xs font-black', bg: 'bg-blue-100', text: 'text-blue-950', border: 'border-blue-400' },
+  { key: 'purple', name: 'Púrpura / Morado', dotColor: 'bg-purple-600', dotBg: '#9333ea', badgeClass: 'bg-purple-100 text-purple-950 border-purple-400 shadow-2xs font-black', bg: 'bg-purple-100', text: 'text-purple-950', border: 'border-purple-400' },
+  { key: 'rose', name: 'Rosa / Carmín', dotColor: 'bg-rose-600', dotBg: '#e11d48', badgeClass: 'bg-rose-100 text-rose-950 border-rose-400 shadow-2xs font-black', bg: 'bg-rose-100', text: 'text-rose-950', border: 'border-rose-400' },
+  { key: 'amber', name: 'Ámbar / Dorado', dotColor: 'bg-amber-600', dotBg: '#d97706', badgeClass: 'bg-amber-100 text-amber-950 border-amber-400 shadow-2xs font-black', bg: 'bg-amber-100', text: 'text-amber-950', border: 'border-amber-400' },
+  { key: 'indigo', name: 'Índigo / Violeta', dotColor: 'bg-indigo-600', dotBg: '#4f46e5', badgeClass: 'bg-indigo-100 text-indigo-950 border-indigo-400 shadow-2xs font-black', bg: 'bg-indigo-100', text: 'text-indigo-950', border: 'border-indigo-400' },
+  { key: 'teal', name: 'Teal / Verde Marino', dotColor: 'bg-teal-600', dotBg: '#0d9488', badgeClass: 'bg-teal-100 text-teal-950 border-teal-400 shadow-2xs font-black', bg: 'bg-teal-100', text: 'text-teal-950', border: 'border-teal-400' },
+  { key: 'lime', name: 'Verde Lima', dotColor: 'bg-lime-600', dotBg: '#65a30d', badgeClass: 'bg-lime-100 text-lime-950 border-lime-400 shadow-2xs font-black', bg: 'bg-lime-100', text: 'text-lime-950', border: 'border-lime-400' },
+  { key: 'orange', name: 'Naranja Brillante', dotColor: 'bg-orange-600', dotBg: '#ea580c', badgeClass: 'bg-orange-100 text-orange-950 border-orange-400 shadow-2xs font-black', bg: 'bg-orange-100', text: 'text-orange-950', border: 'border-orange-400' },
+  { key: 'fuchsia', name: 'Fucsia / Magenta', dotColor: 'bg-fuchsia-600', dotBg: '#c026d3', badgeClass: 'bg-fuchsia-100 text-fuchsia-950 border-fuchsia-400 shadow-2xs font-black', bg: 'bg-fuchsia-100', text: 'text-fuchsia-950', border: 'border-fuchsia-400' },
+  { key: 'sky', name: 'Azul Cielo', dotColor: 'bg-sky-600', dotBg: '#0284c7', badgeClass: 'bg-sky-100 text-sky-950 border-sky-400 shadow-2xs font-black', bg: 'bg-sky-100', text: 'text-sky-950', border: 'border-sky-400' },
+  { key: 'red', name: 'Rojo Carmesí', dotColor: 'bg-red-600', dotBg: '#dc2626', badgeClass: 'bg-red-100 text-red-950 border-red-400 shadow-2xs font-black', bg: 'bg-red-100', text: 'text-red-950', border: 'border-red-400' },
+  { key: 'slate', name: 'Gris Pizarra / Neutro', dotColor: 'bg-slate-600', dotBg: '#475569', badgeClass: 'bg-slate-100 text-slate-900 border-slate-400 shadow-2xs font-black', bg: 'bg-slate-100', text: 'text-slate-900', border: 'border-slate-400' }
+];
+
+export const DEFAULT_CARRIER_CONFIGS: CarrierConfig[] = [
+  { id: 'car-oscar', name: 'Oscar', colorKey: 'cyan' },
+  { id: 'car-ambetter', name: 'Ambetter', colorKey: 'emerald' },
+  { id: 'car-aetna', name: 'Aetna', colorKey: 'rose' },
+  { id: 'car-flblue', name: 'Florida Blue', colorKey: 'blue' },
+  { id: 'car-cigna', name: 'Cigna', colorKey: 'amber' },
+  { id: 'car-uhc', name: 'UnitedHealthcare', colorKey: 'indigo' },
+  { id: 'car-molina', name: 'Molina', colorKey: 'purple' },
+  { id: 'car-kaiser', name: 'Kaiser', colorKey: 'teal' },
+  { id: 'car-humana', name: 'Humana', colorKey: 'lime' }
+];
+
+export function getCarrierColorPreset(colorKey?: string): CarrierColorPreset {
+  if (!colorKey) return CARRIER_COLOR_PRESETS[0];
+  const found = CARRIER_COLOR_PRESETS.find(p => p.key === colorKey);
+  return found || CARRIER_COLOR_PRESETS[0];
+}
+
+// Carga las compañías y sus colores configurados
+export function loadCarrierConfigs(): CarrierConfig[] {
+  try {
+    const raw = localStorage.getItem('polizas_carrier_configs');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Error loading carrier configs from localStorage:', e);
+  }
+
+  // Si existen custom carriers como strings en polizas_custom_carriers, migrarlos
+  try {
+    const oldRaw = localStorage.getItem('polizas_custom_carriers');
+    if (oldRaw) {
+      const oldList = JSON.parse(oldRaw);
+      if (Array.isArray(oldList) && oldList.length > 0) {
+        const migrated: CarrierConfig[] = oldList.map((name: string, idx: number) => {
+          const lower = name.toLowerCase();
+          let colorKey = CARRIER_COLOR_PRESETS[idx % CARRIER_COLOR_PRESETS.length].key;
+          if (lower.includes('ambetter')) colorKey = 'emerald';
+          else if (lower.includes('oscar')) colorKey = 'cyan';
+          else if (lower.includes('blue') || lower.includes('bcbs')) colorKey = 'blue';
+          else if (lower.includes('molina')) colorKey = 'purple';
+          else if (lower.includes('aetna') || lower.includes('cvs')) colorKey = 'rose';
+          else if (lower.includes('cigna')) colorKey = 'amber';
+          else if (lower.includes('united') || lower.includes('uhc')) colorKey = 'indigo';
+          else if (lower.includes('kaiser')) colorKey = 'teal';
+          else if (lower.includes('humana')) colorKey = 'lime';
+          else if (lower.includes('imperial') || lower.includes('care')) colorKey = 'orange';
+
+          return {
+            id: 'car-' + idx + '-' + name.toLowerCase().replace(/[^a-z0-9]/g, ''),
+            name,
+            colorKey
+          };
+        });
+        saveCarrierConfigs(migrated);
+        return migrated;
+      }
+    }
+  } catch (e) {}
+
+  saveCarrierConfigs(DEFAULT_CARRIER_CONFIGS);
+  return DEFAULT_CARRIER_CONFIGS;
+}
+
+// Guarda la lista de compañías y sus colores
+export function saveCarrierConfigs(configs: CarrierConfig[]): void {
+  try {
+    localStorage.setItem('polizas_carrier_configs', JSON.stringify(configs));
+    // Sincronizar también con la clave tradicional polizas_custom_carriers para compatibilidad
+    localStorage.setItem('polizas_custom_carriers', JSON.stringify(configs.map(c => c.name)));
+  } catch (e) {
+    console.error('Error saving carrier configs:', e);
+  }
+}
+
+// Determina el color clave sugerido para un nombre de aseguradora
+function suggestColorKeyForCarrier(carrierName: string, usedKeys: Set<string>): string {
+  const c = carrierName.toLowerCase().trim();
+  if (c.includes('ambetter')) return 'emerald';
+  if (c.includes('oscar')) return 'cyan';
+  if (c.includes('florida blue') || c.includes('blue cross') || c.includes('bcbs') || c === 'blue') return 'blue';
+  if (c.includes('molina')) return 'purple';
+  if (c.includes('aetna') || c.includes('cvs')) return 'rose';
+  if (c.includes('cigna')) return 'amber';
+  if (c.includes('united') || c.includes('uhc') || c.includes('golden rule')) return 'indigo';
+  if (c.includes('kaiser')) return 'teal';
+  if (c.includes('humana')) return 'lime';
+  if (c.includes('imperial') || c.includes('care')) return 'orange';
+  if (c.includes('manhattan')) return 'fuchsia';
+  if (c.includes('anthem')) return 'sky';
+  if (c.includes('wellcare') || c.includes('centene')) return 'emerald';
+
+  // Buscar un color que aún no esté saturado, o asignar determinísticamente
+  for (const preset of CARRIER_COLOR_PRESETS) {
+    if (!usedKeys.has(preset.key)) {
+      return preset.key;
+    }
+  }
+  let hash = 0;
+  for (let i = 0; i < c.length; i++) {
+    hash = (hash << 5) - hash + c.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % CARRIER_COLOR_PRESETS.length;
+  return CARRIER_COLOR_PRESETS[index].key;
+}
+
+// Auto-registra una compañía si no existe (ej. al escribirla en la planilla de cliente)
+export function autoRegisterSingleCarrier(
+  carrierName?: string,
+  currentConfigs?: CarrierConfig[]
+): { configs: CarrierConfig[]; newAdded: boolean; config: CarrierConfig | null } {
+  if (!carrierName || !carrierName.trim()) {
+    const list = currentConfigs || loadCarrierConfigs();
+    return { configs: list, newAdded: false, config: null };
+  }
+  const cleanName = carrierName.trim();
+  const list = [...(currentConfigs || loadCarrierConfigs())];
+  const existing = list.find(c => c.name.toLowerCase() === cleanName.toLowerCase());
+  if (existing) {
+    return { configs: list, newAdded: false, config: existing };
+  }
+
+  const usedKeys = new Set(list.map(c => c.colorKey));
+  const colorKey = suggestColorKeyForCarrier(cleanName, usedKeys);
+  const newConfig: CarrierConfig = {
+    id: 'car-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+    name: cleanName,
+    colorKey
+  };
+  const updated = [...list, newConfig];
+  saveCarrierConfigs(updated);
+  return { configs: updated, newAdded: true, config: newConfig };
+}
+
+// Auto-registra automáticamente todas las compañías presentes en las pólizas
+export function autoRegisterCarriersFromClients(
+  clientsList: Partial<ClientPolicy>[],
+  currentConfigs?: CarrierConfig[]
+): { configs: CarrierConfig[]; newAddedCount: number } {
+  let list = [...(currentConfigs || loadCarrierConfigs())];
+  let addedCount = 0;
+  const usedKeys = new Set(list.map(c => c.colorKey));
+
+  clientsList.forEach(c => {
+    if (!c.carrier || !c.carrier.trim()) return;
+    const cleanName = c.carrier.trim();
+    const alreadyExists = list.some(item => item.name.toLowerCase() === cleanName.toLowerCase());
+    if (!alreadyExists) {
+      const colorKey = suggestColorKeyForCarrier(cleanName, usedKeys);
+      usedKeys.add(colorKey);
+      const newConfig: CarrierConfig = {
+        id: 'car-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        name: cleanName,
+        colorKey
+      };
+      list.push(newConfig);
+      addedCount++;
+    }
+  });
+
+  if (addedCount > 0) {
+    saveCarrierConfigs(list);
+  }
+  return { configs: list, newAddedCount: addedCount };
+}
+
+// Devuelve el estilo y color de la compañía, respetando la configuración personalizada
+export function getCarrierColorStyle(carrierName?: string, customConfigs?: CarrierConfig[]): CarrierColorStyle {
+  if (!carrierName || !carrierName.trim()) {
+    return {
+      bg: 'bg-slate-100',
+      text: 'text-slate-800',
+      border: 'border-slate-300',
+      badgeClass: 'bg-slate-100 text-slate-800 border-slate-300 shadow-2xs font-extrabold',
+      dotColor: 'bg-slate-500'
+    };
+  }
+  const cleanName = carrierName.trim();
+  const c = cleanName.toLowerCase();
+
+  // 1. Revisar si la compañía tiene color personalizado en la configuración
+  const configs = customConfigs || loadCarrierConfigs();
+  const custom = configs.find(cfg => cfg.name.toLowerCase() === c);
+  if (custom && custom.colorKey) {
+    const preset = getCarrierColorPreset(custom.colorKey);
+    return {
+      bg: preset.bg,
+      text: preset.text,
+      border: preset.border,
+      badgeClass: preset.badgeClass,
+      dotColor: preset.dotColor
+    };
+  }
+
+  // 2. Si aún no está en configuración, aplicar reconocimiento por palabras clave
+  if (c.includes('ambetter')) {
+    const p = getCarrierColorPreset('emerald');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('oscar')) {
+    const p = getCarrierColorPreset('cyan');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('florida blue') || c.includes('blue cross') || c.includes('bcbs') || c === 'blue') {
+    const p = getCarrierColorPreset('blue');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('molina')) {
+    const p = getCarrierColorPreset('purple');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('aetna') || c.includes('cvs')) {
+    const p = getCarrierColorPreset('rose');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('cigna')) {
+    const p = getCarrierColorPreset('amber');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('united') || c.includes('uhc') || c.includes('golden rule')) {
+    const p = getCarrierColorPreset('indigo');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('kaiser')) {
+    const p = getCarrierColorPreset('teal');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('humana')) {
+    const p = getCarrierColorPreset('lime');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('imperial') || c.includes('care')) {
+    const p = getCarrierColorPreset('orange');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('manhattan') || c.includes('manhattanlife')) {
+    const p = getCarrierColorPreset('fuchsia');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+  if (c.includes('anthem')) {
+    const p = getCarrierColorPreset('sky');
+    return { bg: p.bg, text: p.text, border: p.border, badgeClass: p.badgeClass, dotColor: p.dotColor };
+  }
+
+  // 3. Fallback determinístico
+  let hash = 0;
+  for (let i = 0; i < c.length; i++) {
+    hash = (hash << 5) - hash + c.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % CARRIER_COLOR_PRESETS.length;
+  const chosen = CARRIER_COLOR_PRESETS[index];
+  return {
+    bg: chosen.bg,
+    text: chosen.text,
+    border: chosen.border,
+    badgeClass: chosen.badgeClass,
+    dotColor: chosen.dotColor
+  };
+}
+
+// Estilos de Estatus de Póliza flexibles y visualmente inmediatos
+export interface PolicyStatusStyle {
+  label: string;
+  badgeClass: string;
+  dotColor: string;
+  rowBorder: string;
+  rowBg: string;
+}
+
+export function getPolicyStatusStyle(rawStatus?: string): PolicyStatusStyle {
+  const statusStr = String(rawStatus || 'Activo').trim();
+  const lower = statusStr.toLowerCase();
+
+  // Si tiene estatus migratorio por error en Excel, se visualiza como Activo
+  const isMigratory = (
+    lower.includes('ciudadan') ||
+    lower.includes('resident') ||
+    lower.includes('permiso') ||
+    lower.includes('parole') ||
+    lower.includes('daca') ||
+    lower.includes('visa') ||
+    lower.includes('asilo') ||
+    lower.includes('tps') ||
+    lower.includes('indocument') ||
+    lower.includes('green card') ||
+    lower.includes('work permit')
+  );
+
+  if (isMigratory || lower === 'activo' || lower === 'activos' || lower === 'active') {
+    return {
+      label: 'Activo',
+      badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      dotColor: 'bg-emerald-500',
+      rowBorder: 'border-l-3 border-l-emerald-500',
+      rowBg: 'hover:bg-slate-50/80'
+    };
+  }
+
+  if (lower.includes('cancel')) {
+    return {
+      label: 'Cancelado',
+      badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+      dotColor: 'bg-rose-500',
+      rowBorder: 'border-l-3 border-l-rose-500',
+      rowBg: 'bg-rose-50/30 hover:bg-rose-50/60'
+    };
+  }
+
+  if (lower.includes('rob')) {
+    return {
+      label: 'Robado',
+      badgeClass: 'bg-purple-100 text-purple-800 border-purple-300',
+      dotColor: 'bg-purple-500',
+      rowBorder: 'border-l-3 border-l-purple-500',
+      rowBg: 'bg-purple-50/30 hover:bg-purple-50/60'
+    };
+  }
+
+  if (lower.includes('cotiz')) {
+    return {
+      label: 'Cotizado',
+      badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
+      dotColor: 'bg-amber-500',
+      rowBorder: 'border-l-3 border-l-amber-500',
+      rowBg: 'bg-amber-50/30 hover:bg-amber-50/60'
+    };
+  }
+
+  if (lower === 'nuevo' || lower.includes('nuevo')) {
+    return {
+      label: 'Nuevo',
+      badgeClass: 'bg-blue-100 text-blue-800 border-blue-300',
+      dotColor: 'bg-blue-500',
+      rowBorder: 'border-l-3 border-l-blue-500',
+      rowBg: 'bg-blue-50/20 hover:bg-blue-50/50'
+    };
+  }
+
+  if (lower.includes('pendiente')) {
+    return {
+      label: 'Pendiente',
+      badgeClass: 'bg-orange-100 text-orange-800 border-orange-300',
+      dotColor: 'bg-orange-500',
+      rowBorder: 'border-l-3 border-l-orange-500',
+      rowBg: 'bg-orange-50/20 hover:bg-orange-50/50'
+    };
+  }
+
+  if (lower.includes('subido') || lower.includes('listo')) {
+    return {
+      label: 'Subido / Listo',
+      badgeClass: 'bg-teal-100 text-teal-800 border-teal-300',
+      dotColor: 'bg-teal-500',
+      rowBorder: 'border-l-3 border-l-teal-500',
+      rowBg: 'hover:bg-slate-50/80'
+    };
+  }
+
+  if (lower.includes('proceso') || lower.includes('tramite')) {
+    return {
+      label: 'En Proceso',
+      badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+      dotColor: 'bg-indigo-500',
+      rowBorder: 'border-l-3 border-l-indigo-500',
+      rowBg: 'hover:bg-slate-50/80'
+    };
+  }
+
+  return {
+    label: statusStr,
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-300',
+    dotColor: 'bg-slate-500',
+    rowBorder: 'border-l-3 border-l-slate-400',
+    rowBg: 'hover:bg-slate-50/80'
+  };
+}
+
+// Cálculo automático de miembros activos (titular activo + dependientes que aplican)
+export function calculateActiveMembers(client: Partial<ClientPolicy>): number {
+  const statusStr = String(client.estatus || 'Activo').trim().toLowerCase();
+  // El titular cuenta si el expediente está activo (no cancelado, robado, inactivo ni no vigente)
+  const isTitularActive = !statusStr.includes('cancel') && !statusStr.includes('rob') && !statusStr.includes('inactiv') && !statusStr.includes('no vigent');
+  const titularCount = isTitularActive ? 1 : 0;
+
+  // 1. Si cuenta con lista estructurada de dependientes
+  if (Array.isArray(client.dependientesList) && client.dependientesList.length > 0) {
+    const activeDeps = client.dependientesList.filter(d => d.aplica !== false).length;
+    return titularCount + activeDeps;
+  }
+
+  // 2. Si cuenta con JSON en datosDependientes
+  if (client.datosDependientes && typeof client.datosDependientes === 'string') {
+    try {
+      const parsed = JSON.parse(client.datosDependientes);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const activeDeps = parsed.filter((d: any) => d.aplica !== false).length;
+        return titularCount + activeDeps;
+      }
+    } catch (_) {}
+  }
+
+  // 3. Fallback con numDependientes
+  const numDeps = typeof client.numDependientes === 'number' && !isNaN(client.numDependientes) ? client.numDependientes : 0;
+  return isTitularActive ? Math.max(1, 1 + numDeps) : numDeps;
+}
+
 // Limpieza y normalización de estatus de clientes
 // Remueve cualquier estatus migratorio (Ciudadanos, Residentes, Permisos, etc.)
-// de la columna de estatus y los marca como 'Activo'
+// de la columna de estatus y los marca como 'Activo' sin tocar estatus legítimos como Cotizado, Cancelado, etc.
 export function sanitizeClients(clients: ClientPolicy[]): ClientPolicy[] {
   if (!Array.isArray(clients)) return [];
   return clients.map(client => {
@@ -580,20 +1033,32 @@ export function sanitizeClients(clients: ClientPolicy[]): ClientPolicy[] {
       estatus = 'Activo';
     } else if (lower === 'activos' || lower === 'active') {
       estatus = 'Activo';
-    } else if (lower.includes('cancel')) {
+    } else if (lower === 'cancelada' || lower === 'canceladas' || lower === 'cancelados') {
       estatus = 'Cancelado';
-    } else if (lower.includes('rob')) {
+    } else if (lower === 'robada' || lower === 'robadas' || lower === 'robados') {
       estatus = 'Robado';
-    } else if (lower === 'nuevo' || lower === 'pendiente' || lower === 'subido / listo') {
-      // Dejar status de trámite tal cual
+    } else if (lower === 'cotizada' || lower === 'cotizadas' || lower === 'cotizados') {
+      estatus = 'Cotizado';
     } else if (!estatus || estatus === 'undefined' || estatus === 'null') {
       estatus = 'Activo';
+    }
+
+    // Poblar dependientesList si datosDependientes tiene JSON
+    let dependientesList = client.dependientesList;
+    if (!dependientesList && client.datosDependientes) {
+      try {
+        const parsed = JSON.parse(client.datosDependientes);
+        if (Array.isArray(parsed)) {
+          dependientesList = parsed;
+        }
+      } catch (_) {}
     }
 
     return {
       ...client,
       estatus,
-      estatusMigratorio: estatusMigratorio || 'Ciudadano'
+      estatusMigratorio: estatusMigratorio || 'Ciudadano',
+      dependientesList
     };
   });
 }

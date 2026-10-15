@@ -4,22 +4,14 @@ import {
   Users, CheckCircle2, XCircle, ShieldAlert, DollarSign,
   Search, RotateCcw, Filter, ChevronDown, Edit, Lock, Unlock,
   CreditCard, Calendar, Phone, MapPin, Building, Gift, ShieldCheck,
-  FileSpreadsheet, Upload, Download, FileText, Check,
+  FileSpreadsheet, Upload, Download, FileText, Check, RotateCw,
   ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight
 } from 'lucide-react';
-import { MONTHS_LIST } from '../services/storage';
+import {
+  MONTHS_LIST, getCarrierColorStyle, getPolicyStatusStyle,
+  calculateActiveMembers, formatShortName
+} from '../services/storage';
 import { exportToExcelFile, downloadExcelTemplate, parseExcelOrCSVBuffer } from '../services/excelService';
-
-export function formatShortName(rawName?: string): string {
-  if (!rawName) return 'Sin Nombre';
-  const name = rawName.trim();
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length <= 2) return name;
-  if (parts.length === 3) {
-    return `${parts[0]} ${parts[2]}`;
-  }
-  return `${parts[0]} ${parts[2] || parts[1]}`;
-}
 
 export function getClientBirthMonth(dbo?: string): number | null {
   if (!dbo) return null;
@@ -78,6 +70,7 @@ interface PoliciesViewProps {
   onOpenPinModal: (target?: string) => void;
   onEditClient: (client: ClientPolicy) => void;
   onRefreshData: () => void;
+  onUpdateStatus?: (clientId: string, newStatus: string) => void;
   onImportClients?: (newClients: ClientPolicy[]) => void;
   onShowToast?: (title: string, message: string, type: 'success' | 'error' | 'info') => void;
 }
@@ -93,6 +86,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   onOpenPinModal,
   onEditClient,
   onRefreshData,
+  onUpdateStatus,
   onImportClients,
   onShowToast
 }) => {
@@ -305,6 +299,15 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={onRefreshData}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg transition text-xs border border-emerald-500 flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Sincronizar de inmediato y refrescar base de datos"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Sincronizar</span>
+            </button>
+            <button
+              type="button"
               onClick={resetFilters}
               className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-lg transition text-xs border border-slate-300 flex items-center gap-1.5 cursor-pointer shadow-2xs"
               title="Restablecer todos los filtros de búsqueda"
@@ -504,7 +507,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
               <tr>
                 <th className="px-2.5 py-2">Estatus</th>
                 <th className="px-2.5 py-2">Nombre y apellido</th>
-                <th className="px-2.5 py-2">Personas Activas / Miembros</th>
+                <th className="px-2.5 py-2">Miembro</th>
                 <th className="px-2.5 py-2">Fecha de nacimiento</th>
                 <th className="px-2.5 py-2">Seguro Social</th>
                 <th className="px-2.5 py-2">Compañías de seguros</th>
@@ -529,44 +532,16 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
               ) : (
                 paginatedClients.map(c => {
                   const isPaid = String(c.pagoRealizado).toUpperCase() === 'TRUE';
-                  const rawStatus = String(c.estatus || 'Activo').trim();
-                  const lowerEst = rawStatus.toLowerCase();
-
-                  // Limpieza: si tiene estatus migratorio (ciudadanos, residentes, etc.), tratarlo como Activo
-                  const isMigratory = (
-                    lowerEst.includes('ciudadan') ||
-                    lowerEst.includes('resident') ||
-                    lowerEst.includes('permiso') ||
-                    lowerEst.includes('parole') ||
-                    lowerEst.includes('daca') ||
-                    lowerEst.includes('visa') ||
-                    lowerEst.includes('asilo') ||
-                    lowerEst.includes('tps') ||
-                    lowerEst.includes('indocument') ||
-                    lowerEst.includes('green card') ||
-                    lowerEst.includes('work permit')
-                  );
-
-                  const isCancel = !isMigratory && (lowerEst.includes('cancel') || rawStatus === 'Cancelado');
-                  const isRobado = !isMigratory && (lowerEst.includes('rob') || rawStatus === 'Robado');
-                  const isActivo = isMigratory || lowerEst === 'activo' || lowerEst === 'activos' || (!isCancel && !isRobado);
-
-                  let rowBorder = 'border-l-4 border-l-emerald-500';
-                  let rowBg = 'hover:bg-slate-50/80';
-                  if (isCancel) {
-                    rowBorder = 'border-l-4 border-l-rose-500';
-                    rowBg = 'bg-rose-50/40 hover:bg-rose-50/70';
-                  } else if (isRobado) {
-                    rowBorder = 'border-l-4 border-l-purple-500';
-                    rowBg = 'bg-purple-50/40 hover:bg-purple-50/70';
-                  }
+                  const statusStyle = getPolicyStatusStyle(c.estatus);
+                  const carrierStyle = getCarrierColorStyle(c.carrier);
+                  const rowBorder = statusStyle.rowBorder;
+                  const rowBg = statusStyle.rowBg;
 
                   const commDisplay = isCommissionUnlocked
                     ? `$30.00 (${isPaid ? 'Cobrado' : 'Pendiente'})`
                     : '🔒 $***';
 
-                  const numDeps = typeof c.numDependientes === 'number' && !isNaN(c.numDependientes) ? c.numDependientes : 0;
-                  const totalMiembros = Math.max(1, numDeps + 1);
+                  const activeMembers = calculateActiveMembers(c);
 
                   return (
                     <tr
@@ -575,27 +550,23 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                       className={`${rowBorder} ${rowBg} transition cursor-pointer text-xs`}
                       title={`Clic para ver o editar la información completa de ${c.nombre || 'este cliente'}`}
                     >
-                      {/* 1. Estatus (Activo / Cancelado - Sin estatus migratorio) */}
-                      <td className="px-2.5 py-1.5 whitespace-nowrap">
-                        {isActivo ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Activo
-                          </span>
-                        ) : isCancel ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-rose-100 text-rose-800 border border-rose-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                            Cancelado
-                          </span>
-                        ) : isRobado ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-purple-100 text-purple-800 border border-purple-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
-                            Robado
-                          </span>
+                      {/* 1. Estatus (Activo, Cotizado, Cancelado, Robado, etc. con guardado inmediato) */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                        {onUpdateStatus ? (
+                          <select
+                            value={statusStyle.label}
+                            onChange={e => onUpdateStatus(c.id, e.target.value)}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-black border cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs ${statusStyle.badgeClass}`}
+                            title="Haz clic para cambiar el estatus de la póliza de inmediato"
+                          >
+                            {Array.from(new Set(['Activo', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'En Proceso', 'Cancelado', 'Robado', ...(customStatuses || [])])).map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs bg-blue-100 text-blue-800 border border-blue-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                            {rawStatus}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs border ${statusStyle.badgeClass}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dotColor}`}></span>
+                            {statusStyle.label}
                           </span>
                         )}
                       </td>
@@ -607,11 +578,11 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </span>
                       </td>
 
-                      {/* 3 & 4. Cuántas personas activas son / Miembros en póliza */}
+                      {/* 3 & 4. Miembro en póliza (👤 X miembro/miembros) */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
-                        <span className="bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs" title={`Póliza con ${totalMiembros} miembros (1 titular + ${numDeps} dependientes)`}>
+                        <span className="bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs" title={`Póliza con ${activeMembers} miembro(s) activo(s)`}>
                           <Users className="w-3 h-3 text-purple-600" />
-                          <span>{totalMiembros} {totalMiembros === 1 ? 'persona activa' : 'personas activas'}</span>
+                          <span>{activeMembers} {activeMembers === 1 ? 'miembro' : 'miembros'}</span>
                         </span>
                       </td>
 
@@ -634,10 +605,11 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </span>
                       </td>
 
-                      {/* 7. Compañías de seguros */}
+                      {/* 7. Compañías de seguros con color distintivo */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
-                        <span className="bg-slate-100 text-slate-900 border border-slate-300 px-2 py-0.5 rounded font-extrabold text-[10px] inline-flex items-center gap-1">
-                          🛡️ {c.carrier || 'General'}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold inline-flex items-center gap-1.5 border shadow-2xs ${carrierStyle.badgeClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${carrierStyle.dotColor}`}></span>
+                          <span>🛡️ {c.carrier || 'General'}</span>
                         </span>
                       </td>
 
