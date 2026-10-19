@@ -77,6 +77,9 @@ export interface Agent {
   licencias: string;
   compania: string;
   notas: string;
+  clave?: string; // Contraseña única de acceso al portal de ventas
+  email?: string;
+  telefono?: string;
 }
 
 export type TaskPriority = 'alta' | 'media' | 'baja';

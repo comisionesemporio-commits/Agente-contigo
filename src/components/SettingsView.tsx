@@ -6,7 +6,10 @@ import {
   Building2, Palette, Edit2, X, Sparkles, CheckCircle2,
   AlertCircle, Info, ChevronDown
 } from 'lucide-react';
-import { getAdminPass, getSellerPass, getMasterPin, CARRIER_COLOR_PRESETS, getCarrierColorPreset, getCarrierColorStyle } from '../services/storage';
+import {
+  getAdminPass, getSellerPass, getMasterPin, CARRIER_COLOR_PRESETS,
+  getCarrierColorPreset, getCarrierColorStyle, setSellerCustomPass, removeSellerCustomPass
+} from '../services/storage';
 import { getSupabaseSetupSQL } from '../services/supabase';
 import { CarrierConfig, CarrierColorPreset } from '../types';
 
@@ -24,6 +27,8 @@ interface SettingsViewProps {
   carrierConfigs?: CarrierConfig[];
   clientsCountByCarrier?: Record<string, number>;
   onAddSeller: (seller: string) => void;
+  onAddSellerWithPass?: (seller: string, pass: string) => void;
+  onUpdateSeller?: (oldName: string, newName: string, pass?: string) => void;
   onRemoveSeller: (seller: string) => void;
   onAddCarrier: (carrier: string) => void;
   onAddCarrierWithColor?: (name: string, colorKey: string) => void;
@@ -49,6 +54,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   carrierConfigs = [],
   clientsCountByCarrier = {},
   onAddSeller,
+  onAddSellerWithPass,
+  onUpdateSeller,
   onRemoveSeller,
   onAddCarrier,
   onAddCarrierWithColor,
@@ -72,6 +79,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Catalog inputs
   const [newSellerInput, setNewSellerInput] = useState('');
+  const [newSellerPassInput, setNewSellerPassInput] = useState('Venta2026');
+  const [editingSellerName, setEditingSellerName] = useState<string | null>(null);
+  const [editSellerNameInput, setEditSellerNameInput] = useState('');
+  const [editSellerPassInput, setEditSellerPassInput] = useState('');
+  const [showSellerPasswords, setShowSellerPasswords] = useState<Record<string, boolean>>({});
+
   const [newCarrierInput, setNewCarrierInput] = useState('');
   const [selectedColorKey, setSelectedColorKey] = useState('orange');
   const [newStatusInput, setNewStatusInput] = useState('');
@@ -607,46 +620,172 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
       {/* 5. OTROS CATÁLOGOS: VENDEDORES Y ESTATUS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-        {/* Sellers */}
+        {/* Sellers & Passwords Management */}
         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-            <UserCheck className="w-4 h-4 text-amber-600" />
-            Lista de Vendedores
-          </h3>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={newSellerInput}
-              onChange={e => setNewSellerInput(e.target.value)}
-              placeholder="Nombre vendedor..."
-              className="flex-1 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold bg-white"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (newSellerInput.trim()) {
-                  onAddSeller(newSellerInput.trim());
-                  setNewSellerInput('');
-                }
-              }}
-              className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer"
-            >
-              + Agregar
-            </button>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-amber-600" />
+              Vendedores & Claves Individuales
+            </h3>
+            <span className="text-[10px] bg-amber-100 text-amber-900 font-extrabold px-2 py-0.5 rounded-full border border-amber-200">
+              {customSellers.length} Vendedores
+            </span>
           </div>
-          <div className="flex flex-wrap gap-1.5 pt-2">
-            {customSellers.map(v => (
-              <span key={v} className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-700 flex items-center shadow-sm">
-                👤 {v}
+
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Asigna una clave única a cada vendedor. Por defecto inician con <strong>Venta2026</strong>.
+          </p>
+
+          {/* Formulario para Registrar Nuevo Vendedor con Clave */}
+          <div className="bg-white p-3 border border-slate-200 rounded-xl space-y-2">
+            <span className="font-extrabold text-slate-700 uppercase tracking-wider block text-[10px]">
+              + Nuevo Vendedor
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <div className="sm:col-span-6">
+                <input
+                  type="text"
+                  value={newSellerInput}
+                  onChange={e => setNewSellerInput(e.target.value)}
+                  placeholder="Nombre (ej. Virginia)"
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 bg-white focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div className="sm:col-span-4">
+                <input
+                  type="text"
+                  value={newSellerPassInput}
+                  onChange={e => setNewSellerPassInput(e.target.value)}
+                  placeholder="Clave (Venta2026)"
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 bg-white focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div className="sm:col-span-2">
                 <button
                   type="button"
-                  onClick={() => onRemoveSeller(v)}
-                  className="ml-2 text-rose-500 hover:text-rose-700 transition cursor-pointer"
+                  onClick={() => {
+                    const cleanName = newSellerInput.trim();
+                    if (!cleanName) {
+                      onShowToast('Nombre Requerido', 'Ingresa el nombre del vendedor.', 'info');
+                      return;
+                    }
+                    const pass = newSellerPassInput.trim() || 'Venta2026';
+                    if (onAddSellerWithPass) {
+                      onAddSellerWithPass(cleanName, pass);
+                    } else {
+                      onAddSeller(cleanName);
+                      setSellerCustomPass(cleanName, pass);
+                    }
+                    setNewSellerInput('');
+                    setNewSellerPassInput('Venta2026');
+                  }}
+                  className="w-full bg-amber-600 hover:bg-amber-500 text-white py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer"
                 >
-                  ×
+                  + Agregar
                 </button>
-              </span>
-            ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Listado de Vendedores con Edición de Nombre y Clave */}
+          <div className="space-y-1.5 max-h-56 overflow-y-auto pt-1">
+            {customSellers.map(v => {
+              const isEditing = editingSellerName === v;
+              const sellerPassword = getSellerPass(v);
+              const isPassVisible = !!showSellerPasswords[v];
+
+              return (
+                <div
+                  key={v}
+                  className="p-2.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 shadow-2xs hover:border-slate-300 transition"
+                >
+                  {isEditing ? (
+                    <div className="flex flex-1 items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={editSellerNameInput}
+                        onChange={e => setEditSellerNameInput(e.target.value)}
+                        placeholder="Nombre vendedor"
+                        className="w-1/2 border border-emerald-500 rounded px-2 py-1 text-xs font-bold bg-white"
+                      />
+                      <input
+                        type="text"
+                        value={editSellerPassInput}
+                        onChange={e => setEditSellerPassInput(e.target.value)}
+                        placeholder="Nueva clave"
+                        className="w-1/2 border border-emerald-500 rounded px-2 py-1 text-xs font-mono font-bold bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const cleanNewName = editSellerNameInput.trim();
+                          if (!cleanNewName) return;
+                          const finalPass = editSellerPassInput.trim() || 'Venta2026';
+                          if (onUpdateSeller) {
+                            onUpdateSeller(v, cleanNewName, finalPass);
+                          } else {
+                            setSellerCustomPass(cleanNewName, finalPass);
+                            onShowToast('Clave Actualizada', `Clave de "${cleanNewName}" guardada.`, 'success');
+                          }
+                          setEditingSellerName(null);
+                        }}
+                        className="p-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded cursor-pointer"
+                        title="Guardar vendedor y clave"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSellerName(null)}
+                        className="p-1 bg-slate-200 text-slate-700 rounded cursor-pointer"
+                        title="Cancelar"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-bold text-slate-800 text-xs truncate">👤 {v}</span>
+                        <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
+                          🔑 {isPassVisible ? sellerPassword : '••••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowSellerPasswords(prev => ({ ...prev, [v]: !prev[v] }))}
+                          className="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer shrink-0"
+                        >
+                          {isPassVisible ? 'Ocultar' : 'Ver'}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSellerName(v);
+                            setEditSellerNameInput(v);
+                            setEditSellerPassInput(sellerPassword);
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                          title="Editar nombre y clave"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRemoveSeller(v)}
+                          className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                          title="Eliminar vendedor"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

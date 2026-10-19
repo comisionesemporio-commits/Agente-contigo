@@ -14,7 +14,7 @@ export const DEFAULT_CARRIERS = [
 ];
 
 export const DEFAULT_STATUSES = [
-  "Activo", "Cotizado", "Nuevo", "Subido / Listo", "Pendiente", "En Proceso", "Cancelado", "Robado"
+  "Activo", "En Proceso", "Cotizado", "Nuevo", "Subido / Listo", "Pendiente", "Cancelado", "Robado"
 ];
 
 export const DEFAULT_SUPABASE_URL = "https://kyyddkrqmlohviakcxsg.supabase.co";
@@ -1228,10 +1228,56 @@ export function getAdminPass(): string {
   return localStorage.getItem('app_admin_pass') || "Admin2026";
 }
 
-export function getSellerPass(): string {
-  return localStorage.getItem('app_seller_pass') || "Ventas2026";
+export function getAllSellerPasswords(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem('app_seller_passwords');
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return {};
+}
+
+export function getSellerPass(sellerName?: string): string {
+  const globalPass = localStorage.getItem('app_seller_pass') || "Venta2026";
+  if (!sellerName) return globalPass;
+  const passwords = getAllSellerPasswords();
+  const trimmed = sellerName.trim().toLowerCase();
+  for (const [key, val] of Object.entries(passwords)) {
+    if (key.trim().toLowerCase() === trimmed && val) {
+      return val;
+    }
+  }
+  return globalPass;
+}
+
+export function setSellerCustomPass(sellerName: string, newPass: string) {
+  const cleanName = sellerName.trim();
+  if (!cleanName) return;
+  const passwords = getAllSellerPasswords();
+  passwords[cleanName] = newPass.trim();
+  localStorage.setItem('app_seller_passwords', JSON.stringify(passwords));
+}
+
+export function removeSellerCustomPass(sellerName: string) {
+  const cleanName = sellerName.trim();
+  const passwords = getAllSellerPasswords();
+  delete passwords[cleanName];
+  localStorage.setItem('app_seller_passwords', JSON.stringify(passwords));
 }
 
 export function getMasterPin(): string {
   return localStorage.getItem('app_master_pin') || "Agente2026";
 }
+
+/**
+ * Parsea estatus múltiples que un cliente pueda tener (separados por coma, barra o punto y coma)
+ * Ejemplo: "Activo, Cotizado" -> ["Activo", "Cotizado"]
+ */
+export function parseClientStatuses(statusStr?: string): string[] {
+  if (!statusStr || typeof statusStr !== 'string') return ['Activo'];
+  const parts = statusStr
+    .split(/[,;/+]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : ['Activo'];
+}
+

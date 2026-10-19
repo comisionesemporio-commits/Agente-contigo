@@ -2,14 +2,14 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ClientPolicy, Agent } from '../types';
 import {
   Users, CheckCircle2, XCircle, ShieldAlert, DollarSign,
-  Search, RotateCcw, Filter, ChevronDown, Edit, Lock, Unlock,
+  Search, RotateCcw, Filter, ChevronDown, Edit, Edit2, Lock, Unlock,
   CreditCard, Calendar, Phone, MapPin, Building, Gift, ShieldCheck,
   FileSpreadsheet, Upload, Download, FileText, Check, RotateCw,
-  ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight
+  ChevronsLeft, ChevronLeft, ChevronRight, ChevronsRight, Tag
 } from 'lucide-react';
 import {
   MONTHS_LIST, getCarrierColorStyle, getPolicyStatusStyle,
-  calculateActiveMembers, formatShortName
+  calculateActiveMembers, formatShortName, parseClientStatuses
 } from '../services/storage';
 import { exportToExcelFile, downloadExcelTemplate, parseExcelOrCSVBuffer } from '../services/excelService';
 
@@ -96,19 +96,70 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   const [filterSeller, setFilterSeller] = useState<string[]>([]);
   const [filterAgent, setFilterAgent] = useState<string[]>([]);
   const [filterState, setFilterState] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string[]>([]);
   const [filterCarrier, setFilterCarrier] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
   const [filterBirthMonth, setFilterBirthMonth] = useState('');
   const [showSellerMenu, setShowSellerMenu] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
 
   // Pagination state (default 20 as requested)
-  const [pageSize, setPageSize] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [includeAllYears, setIncludeAllYears] = useState<boolean>(false);
+  const [openStatusMenuClientId, setOpenStatusMenuClientId] = useState<string | null>(null);
+  const [customStatusText, setCustomStatusText] = useState('');
 
-  // Filter clients by active year
-  const yearClients = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
+  const handleToggleClientStatus = (clientId: string, currentStatusRaw: string, statusToToggle: string) => {
+    if (!onUpdateStatus) return;
+    const currentList = parseClientStatuses(currentStatusRaw);
+    const exists = currentList.some(s => s.toLowerCase() === statusToToggle.toLowerCase());
+    let nextList: string[];
+    if (exists) {
+      nextList = currentList.filter(s => s.toLowerCase() !== statusToToggle.toLowerCase());
+      if (nextList.length === 0) nextList = ['Activo'];
+    } else {
+      nextList = [...currentList, statusToToggle];
+    }
+    onUpdateStatus(clientId, nextList.join(', '));
+  };
+
+  const handleAddCustomStatusToClient = (clientId: string, currentStatusRaw: string, customTag: string) => {
+    if (!onUpdateStatus || !customTag.trim()) return;
+    const clean = customTag.trim();
+    const currentList = parseClientStatuses(currentStatusRaw);
+    if (!currentList.some(s => s.toLowerCase() === clean.toLowerCase())) {
+      const nextList = [...currentList, clean];
+      onUpdateStatus(clientId, nextList.join(', '));
+    }
+    setCustomStatusText('');
+  };
+
+  // Helper para detectar con certeza total si un cliente está en proceso (por estatus de póliza, migratorio o documental)
+  const isClientProceso = (c: ClientPolicy) => {
+    const st = String(c.estatus || '').trim().toLowerCase();
+    const mig = String(c.estatusMigratorio || '').trim().toLowerCase();
+    const doc = String(c.docStatus || '').trim().toLowerCase();
+    const notas = String(c.notas || '').trim().toLowerCase();
+    return (
+      st.includes('proceso') || st.includes('proces') || st === 'en_progreso' || st.includes('tramit') ||
+      mig.includes('proceso') || mig.includes('proces') ||
+      doc.includes('proceso') || doc.includes('proces') ||
+      (notas.includes('estatus proceso') || notas.includes('en proceso'))
+    );
+  };
+
+  // Filter clients by active year (o todos los años si el usuario lo selecciona)
+  const yearClients = useMemo(() => {
+    if (includeAllYears) return clients;
+    return clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
+  }, [clients, selectedYear, includeAllYears]);
+
+  // Conteo total de expedientes en proceso en la lista activa
+  const totalProcesoCount = useMemo(() => {
+    return yearClients.filter(isClientProceso).length;
+  }, [yearClients]);
 
   // Dynamic available agents list
   const availableAgents = useMemo(() => {
@@ -137,7 +188,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
 
   const filteredClients = yearClients.filter(c => {
     if (searchTerm) {
-      const q = searchTerm.toLowerCase();
+      const q = searchTerm.toLowerCase().trim();
       const match = (c.nombre || '').toLowerCase().includes(q) ||
         (c.nombrePlan || '').toLowerCase().includes(q) ||
         (c.ssn || '').includes(q) ||
@@ -145,7 +196,15 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
         (c.agente || '').toLowerCase().includes(q) ||
         (c.numPoliza || '').toLowerCase().includes(q) ||
         (c.telefono || '').includes(q) ||
-        (c.bancoNombre || '').toLowerCase().includes(q);
+        (c.bancoNombre || '').toLowerCase().includes(q) ||
+        (c.estatus || '').toLowerCase().includes(q) ||
+        (c.estatusMigratorio || '').toLowerCase().includes(q) ||
+        (c.docStatus || '').toLowerCase().includes(q) ||
+        (c.carrier || '').toLowerCase().includes(q) ||
+        (c.direccion || '').toLowerCase().includes(q) ||
+        (c.notas || '').toLowerCase().includes(q) ||
+        (q === 'proceso' && isClientProceso(c)) ||
+        (q === 'en proceso' && isClientProceso(c));
       if (!match) return false;
     }
 
@@ -167,16 +226,60 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       return false;
     }
 
-    if (filterStatus) {
-      if (filterStatus === 'Nuevo por procesar') {
-        if (c.estatus !== 'Nuevo' && c.estatus !== 'Subido / Listo' && c.estatus !== 'Pendiente') return false;
-      } else if (filterStatus === 'Activos') {
-        if (c.estatus !== 'Activo') return false;
-      } else if (filterStatus === 'Cancelados y robados') {
-        if (c.estatus !== 'Cancelado' && c.estatus !== 'Robado') return false;
-      } else if (c.estatus !== filterStatus) {
-        return false;
-      }
+    if (filterStatus.length > 0) {
+      const clientStatuses = parseClientStatuses(c.estatus).map(s => s.toLowerCase());
+      const clientStatusStr = String(c.estatus || 'Activo').toLowerCase();
+
+      const matchesAnySelected = filterStatus.some(selected => {
+        const sel = selected.trim().toLowerCase();
+
+        // 1. Coincidencia para "En Proceso" o "Proceso"
+        if (sel.includes('proceso') || sel.includes('proces') || sel === 'en proceso' || sel === 'proceso') {
+          if (isClientProceso(c)) return true;
+          return clientStatuses.some(st => st.includes('proceso') || st.includes('proces'));
+        }
+
+        // 2. Coincidencia para "Activos" o "Activo"
+        if (sel === 'activos' || sel === 'activo') {
+          return clientStatuses.some(st => st === 'activo' || st === 'activos' || st === 'active');
+        }
+
+        // 3. Coincidencia para "Nuevo" o "Nuevo por procesar"
+        if (sel === 'nuevo por procesar' || sel === 'nuevo') {
+          return clientStatuses.some(st => st === 'nuevo' || st.includes('subid') || st === 'pendiente') || isClientProceso(c);
+        }
+
+        // 4. Coincidencia para "Cancelados"
+        if (sel.includes('cancel')) {
+          return clientStatuses.some(st => st.includes('cancel'));
+        }
+
+        // 5. Coincidencia para "Robados"
+        if (sel.includes('rob')) {
+          return clientStatuses.some(st => st.includes('rob'));
+        }
+
+        // 6. Coincidencia para "Cotizado"
+        if (sel.includes('cotiz')) {
+          return clientStatuses.some(st => st.includes('cotiz'));
+        }
+
+        // 7. Coincidencia para "Pendiente"
+        if (sel.includes('pendient')) {
+          return clientStatuses.some(st => st.includes('pendient'));
+        }
+
+        // 8. Coincidencia para "Subido / Listo"
+        if (sel.includes('subid') || sel.includes('listo')) {
+          return clientStatuses.some(st => st.includes('subid') || st.includes('listo'));
+        }
+
+        // 9. Coincidencia general flexible
+        return clientStatuses.some(st => st === sel || st.includes(sel) || sel.includes(st)) ||
+               clientStatusStr.includes(sel);
+      });
+
+      if (!matchesAnySelected) return false;
     }
 
     if (filterPayment) {
@@ -221,7 +324,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     setFilterSeller([]);
     setFilterAgent([]);
     setFilterState('');
-    setFilterStatus('');
+    setFilterStatus([]);
     setFilterCarrier('');
     setFilterMonth('');
     setFilterBirthMonth('');
@@ -242,6 +345,73 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     } else {
       setFilterAgent([...filterAgent, agentName]);
     }
+  };
+
+  const toggleStatusSelect = (statusLabel: string) => {
+    if (filterStatus.includes(statusLabel)) {
+      setFilterStatus(filterStatus.filter(s => s !== statusLabel));
+    } else {
+      setFilterStatus([...filterStatus, statusLabel]);
+    }
+  };
+
+  const availableStatuses = useMemo(() => {
+    const list: Array<{ label: string; dot: string }> = [
+      { label: 'Activo', dot: 'bg-emerald-500' },
+      { label: 'En Proceso', dot: 'bg-indigo-500' },
+      { label: 'Cotizado', dot: 'bg-amber-500' },
+      { label: 'Nuevo', dot: 'bg-blue-500' },
+      { label: 'Pendiente', dot: 'bg-orange-500' },
+      { label: 'Subido / Listo', dot: 'bg-teal-500' },
+      { label: 'Cancelado', dot: 'bg-rose-500' },
+      { label: 'Robado', dot: 'bg-purple-500' }
+    ];
+
+    // Incluir cualquier estatus individual real que los clientes tengan en la base de datos
+    clients.forEach(c => {
+      const clientStList = parseClientStatuses(c.estatus);
+      clientStList.forEach(st => {
+        const cleanSt = st.trim();
+        const lower = cleanSt.toLowerCase();
+        // Ignorar variantes que caen dentro de En Proceso
+        if (lower === 'proceso' || lower === 'en proceso' || lower.includes('tramite')) return;
+        if (cleanSt && !list.some(item => item.label.toLowerCase() === lower)) {
+          list.push({ label: cleanSt, dot: 'bg-cyan-500' });
+        }
+      });
+    });
+
+    if (customStatuses) {
+      customStatuses.forEach(st => {
+        const cleanSt = st.trim();
+        const lower = cleanSt.toLowerCase();
+        if (lower === 'proceso') return;
+        if (!list.some(item => item.label.toLowerCase() === lower)) {
+          list.push({ label: cleanSt, dot: 'bg-cyan-500' });
+        }
+      });
+    }
+    return list;
+  }, [clients, customStatuses]);
+
+  const getStatusCount = (label: string) => {
+    const lower = label.toLowerCase();
+    if (lower.includes('proceso') || lower === 'en proceso' || lower === 'proceso') {
+      return totalProcesoCount;
+    }
+    return yearClients.filter(c => {
+      const statuses = parseClientStatuses(c.estatus).map(s => s.toLowerCase());
+      return statuses.some(st => {
+        if (lower === 'activo') return st === 'activo' || st === 'activos' || st === 'active';
+        if (lower.includes('cancel')) return st.includes('cancel');
+        if (lower.includes('rob')) return st.includes('rob');
+        if (lower.includes('cotiz')) return st.includes('cotiz');
+        if (lower.includes('pendient')) return st.includes('pendient');
+        if (lower === 'nuevo' || lower === 'nuevo por procesar') return st.includes('nuevo');
+        if (lower.includes('subid') || lower.includes('listo')) return st.includes('subid') || st.includes('listo');
+        return st === lower || st.includes(lower);
+      });
+    }).length;
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,20 +450,23 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       {/* Filters Toolbar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100 text-xs">
-          <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-xl">
-            <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="font-extrabold text-indigo-950 text-[11px] uppercase">
-              Estado de Pago:
-            </span>
-            <select
-              value={filterPayment}
-              onChange={e => setFilterPayment(e.target.value)}
-              className="bg-white border border-indigo-300 text-indigo-950 text-xs font-black rounded-lg px-2 py-0.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
-            >
-              <option value="">💳 Todos los Pagos</option>
-              <option value="TRUE">🟢 Al día (Pago Realizado)</option>
-              <option value="FALSE">🔴 Pendientes de pago</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Estado de Pago */}
+            <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-xl">
+              <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="font-extrabold text-indigo-950 text-[11px] uppercase">
+                Estado de Pago:
+              </span>
+              <select
+                value={filterPayment}
+                onChange={e => setFilterPayment(e.target.value)}
+                className="bg-white border border-indigo-300 text-indigo-950 text-xs font-black rounded-lg px-2 py-0.5 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer"
+              >
+                <option value="">💳 Todos los Pagos</option>
+                <option value="TRUE">🟢 Al día (Pago Realizado)</option>
+                <option value="FALSE">🔴 Pendientes de pago</option>
+              </select>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -327,7 +500,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Buscar Cliente, Plan..."
+              placeholder="Buscar Cliente, Plan, Estatus (ej. Proceso)..."
               className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-medium"
             />
           </div>
@@ -434,21 +607,61 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
             </select>
           </div>
 
-          {/* Status */}
-          <div>
-            <select
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-              className="w-full py-2 px-3 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none font-bold text-slate-900 bg-slate-50"
+          {/* Status Multi-select Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setShowStatusMenu(!showStatusMenu);
+                setShowSellerMenu(false);
+                setShowAgentMenu(false);
+              }}
+              className="w-full py-2 px-3 border border-emerald-300 rounded-lg text-xs font-bold text-slate-900 bg-white hover:bg-slate-50 flex items-center justify-between focus:ring-2 focus:ring-emerald-500 focus:outline-none shadow-2xs"
             >
-              <option value="">⚡ Todos los Estatus</option>
-              <option value="Nuevo por procesar">🔵 Nuevo por procesar</option>
-              <option value="Activos">🟢 Activos</option>
-              <option value="Cancelados y robados">🔴/🟣 Cancelados y robados</option>
-              {customStatuses.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              <span className="truncate">
+                {filterStatus.length === 0
+                  ? '⚡ Estatus: Todos'
+                  : filterStatus.length === 1
+                  ? `⚡ ${filterStatus[0]}`
+                  : `⚡ ${filterStatus.length} Estatus seleccionados`}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 ml-1 shrink-0" />
+            </button>
+
+            {showStatusMenu && (
+              <div className="absolute z-40 left-0 right-0 mt-1 min-w-[220px] bg-white border border-slate-200 rounded-xl shadow-2xl p-2 space-y-1 max-h-64 overflow-y-auto text-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1 px-1">
+                  <span className="font-extrabold text-[10px] text-slate-500 uppercase">Seleccionar Estatus</span>
+                  <button
+                    type="button"
+                    onClick={() => { setFilterStatus([]); setShowStatusMenu(false); }}
+                    className="text-[10px] text-emerald-600 font-bold hover:underline"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+
+                {availableStatuses.map(st => (
+                  <label key={st.label} className="flex items-center justify-between px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-slate-800 font-semibold transition">
+                    <div className="flex items-center space-x-2 truncate">
+                      <input
+                        type="checkbox"
+                        checked={filterStatus.includes(st.label)}
+                        onChange={() => toggleStatusSelect(st.label)}
+                        className="w-3.5 h-3.5 text-emerald-600 rounded"
+                      />
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${st.dot}`}></span>
+                        <span className="truncate">{st.label}</span>
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-mono font-black px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-700 ml-2 shrink-0">
+                      {getStatusCount(st.label)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Carrier */}
@@ -525,8 +738,31 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
             <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
               {filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="p-10 text-center text-slate-400 font-semibold">
-                    No se encontraron pólizas coincidentes para el año {selectedYear}
+                  <td colSpan={15} className="p-8 text-center text-slate-500 font-semibold space-y-3">
+                    <p className="text-sm font-bold text-slate-600">
+                      No se encontraron pólizas coincidentes {includeAllYears ? 'en ningún año' : `para el año ${selectedYear}`} con los filtros actuales.
+                    </p>
+                    {clients.some(isClientProceso) && !includeAllYears && (
+                      <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-950 px-4 py-2 rounded-xl text-xs">
+                        <span>💡 Existen expedientes con estatus <strong>"En Proceso"</strong> en otros años.</span>
+                        <button
+                          type="button"
+                          onClick={() => setIncludeAllYears(true)}
+                          className="font-black text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                        >
+                          Ver Todos los Años
+                        </button>
+                      </div>
+                    )}
+                    <div>
+                      <button
+                        type="button"
+                        onClick={resetFilters}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-lg text-xs transition border border-slate-300 cursor-pointer shadow-2xs"
+                      >
+                        Restablecer Filtros
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -550,25 +786,146 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                       className={`${rowBorder} ${rowBg} transition cursor-pointer text-xs`}
                       title={`Clic para ver o editar la información completa de ${c.nombre || 'este cliente'}`}
                     >
-                      {/* 1. Estatus (Activo, Cotizado, Cancelado, Robado, etc. con guardado inmediato) */}
-                      <td className="px-2.5 py-1.5 whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        {onUpdateStatus ? (
-                          <select
-                            value={statusStyle.label}
-                            onChange={e => onUpdateStatus(c.id, e.target.value)}
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-black border cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-2xs ${statusStyle.badgeClass}`}
-                            title="Haz clic para cambiar el estatus de la póliza de inmediato"
-                          >
-                            {Array.from(new Set(['Activo', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'En Proceso', 'Cancelado', 'Robado', ...(customStatuses || [])])).map(st => (
-                              <option key={st} value={st}>{st}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs border ${statusStyle.badgeClass}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dotColor}`}></span>
-                            {statusStyle.label}
-                          </span>
-                        )}
+                      {/* 1. Estatus (Múltiples estatus con insignias independientes y selector rápido) */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap relative" onClick={e => e.stopPropagation()}>
+                        {(() => {
+                          const clientStatuses = parseClientStatuses(c.estatus);
+                          const isMenuOpen = openStatusMenuClientId === c.id;
+
+                          return (
+                            <div className="relative">
+                              <div className="flex flex-wrap items-center gap-1">
+                                {clientStatuses.map((st, i) => {
+                                  const stStyle = getPolicyStatusStyle(st);
+                                  return (
+                                    <span
+                                      key={i}
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs border ${stStyle.badgeClass}`}
+                                    >
+                                      <span className={`w-1.5 h-1.5 rounded-full ${stStyle.dotColor}`}></span>
+                                      <span>{st}</span>
+                                    </span>
+                                  );
+                                })}
+
+                                {onUpdateStatus && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenStatusMenuClientId(isMenuOpen ? null : c.id);
+                                      setCustomStatusText('');
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition cursor-pointer border border-transparent hover:border-indigo-200"
+                                    title="Modificar o añadir estatus (permite seleccionar 2 o más estatus)"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Popover flotante para seleccionar o desmarcar estatus */}
+                              {isMenuOpen && (
+                                <div
+                                  className="absolute left-0 top-7 z-40 bg-white border border-slate-300 rounded-2xl shadow-2xl p-3 w-64 space-y-2 text-xs"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                    <span className="font-black text-slate-800 text-[11px] uppercase flex items-center gap-1">
+                                      <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                                      Estatus de la Póliza
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setOpenStatusMenuClientId(null)}
+                                      className="text-slate-400 hover:text-slate-700 text-xs font-bold p-0.5 cursor-pointer"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+
+                                  <p className="text-[10px] text-slate-500 leading-tight">
+                                    Puedes seleccionar <strong>varios estatus</strong> (ej. <em>Activo</em> y <em>Cotizado</em>):
+                                  </p>
+
+                                  <div className="max-h-48 overflow-y-auto space-y-1 p-0.5">
+                                    {['Activo', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
+                                      const isChecked = clientStatuses.some(s => s.toLowerCase() === opt.toLowerCase());
+                                      const optStyle = getPolicyStatusStyle(opt);
+                                      return (
+                                        <label
+                                          key={opt}
+                                          className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer transition text-[11px] font-bold ${
+                                            isChecked ? 'bg-indigo-50 text-indigo-950 font-black ring-1 ring-indigo-200' : 'hover:bg-slate-50 text-slate-700'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-1.5">
+                                            <input
+                                              type="checkbox"
+                                              checked={isChecked}
+                                              onChange={() => handleToggleClientStatus(c.id, c.estatus, opt)}
+                                              className="w-3.5 h-3.5 text-indigo-600 rounded cursor-pointer"
+                                            />
+                                            <span className={`w-2 h-2 rounded-full ${optStyle.dotColor}`}></span>
+                                            <span>{opt}</span>
+                                          </div>
+                                          {isChecked && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                                        </label>
+                                      );
+                                    })}
+
+                                    {/* Mostrar cualquier otro estatus personalizado que ya tenga este cliente */}
+                                    {clientStatuses.filter(s => !['Activo', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].some(opt => opt.toLowerCase() === s.toLowerCase())).map(customSt => (
+                                      <label
+                                        key={customSt}
+                                        className="flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer transition text-[11px] font-black bg-cyan-50 text-cyan-950 ring-1 ring-cyan-200"
+                                      >
+                                        <div className="flex items-center gap-1.5">
+                                          <input
+                                            type="checkbox"
+                                            checked={true}
+                                            onChange={() => handleToggleClientStatus(c.id, c.estatus, customSt)}
+                                            className="w-3.5 h-3.5 text-cyan-600 rounded cursor-pointer"
+                                          />
+                                          <span className="w-2 h-2 rounded-full bg-cyan-500"></span>
+                                          <span>{customSt}</span>
+                                        </div>
+                                        <Check className="w-3.5 h-3.5 text-cyan-600" />
+                                      </label>
+                                    ))}
+                                  </div>
+
+                                  {/* Agregar estatus libre como "Cotizado 2027" */}
+                                  <div className="pt-2 border-t border-slate-100 space-y-1">
+                                    <span className="text-[10px] text-slate-500 font-semibold block">+ Agregar otro estatus (ej. Cotizado 2027):</span>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="text"
+                                        value={customStatusText}
+                                        onChange={e => setCustomStatusText(e.target.value)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddCustomStatusToClient(c.id, c.estatus, customStatusText);
+                                          }
+                                        }}
+                                        placeholder="Ej: Cotizado 2027"
+                                        className="flex-1 border border-slate-300 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddCustomStatusToClient(c.id, c.estatus, customStatusText)}
+                                        className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-[10px] rounded-lg transition cursor-pointer"
+                                      >
+                                        Añadir
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* 2. Nombre y apellido (Recortado a nombre y apellido; completo al abrir o en hover) */}

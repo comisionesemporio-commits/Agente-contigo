@@ -32,11 +32,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
       return;
     }
 
-    const expectedPass = getSellerPass();
-    if (sellerPass === expectedPass || sellerPass === 'Ventas2026') {
+    const expectedPass = getSellerPass(sellerName);
+    const pass = sellerPass.trim();
+    if (pass === expectedPass) {
       onLoginSeller(sellerName);
     } else {
-      setErrorMessage('Clave de vendedor incorrecta.');
+      setErrorMessage(`Clave de acceso incorrecta para "${sellerName}".`);
     }
   };
 

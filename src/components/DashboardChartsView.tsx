@@ -25,11 +25,19 @@ export const DashboardChartsView: React.FC<DashboardChartsViewProps> = ({
   const totalCarrierCount = yearClients.length || 1;
 
   // Status distribution
+  const isProc = (c: ClientPolicy) => {
+    const st = (c.estatus || '').toLowerCase();
+    const mig = (c.estatusMigratorio || '').toLowerCase();
+    const doc = (c.docStatus || '').toLowerCase();
+    return st.includes('proceso') || st.includes('proces') || mig.includes('proceso') || doc.includes('proceso');
+  };
+
   const statusCounts = {
-    'Nuevos / Pendientes': yearClients.filter(c => c.estatus === 'Nuevo' || c.estatus === 'Subido / Listo' || c.estatus === 'Pendiente').length,
-    'Activos': yearClients.filter(c => c.estatus === 'Activo').length,
-    'Cancelados': yearClients.filter(c => c.estatus === 'Cancelado').length,
-    'Robados': yearClients.filter(c => c.estatus === 'Robado').length,
+    'Activos': yearClients.filter(c => !isProc(c) && (c.estatus === 'Activo' || c.estatus === 'activos')).length,
+    'En Proceso': yearClients.filter(c => isProc(c)).length,
+    'Nuevos / Pendientes': yearClients.filter(c => !isProc(c) && (c.estatus === 'Nuevo' || c.estatus === 'Subido / Listo' || c.estatus === 'Pendiente' || c.estatus === 'Cotizado')).length,
+    'Cancelados': yearClients.filter(c => !isProc(c) && c.estatus === 'Cancelado').length,
+    'Robados': yearClients.filter(c => !isProc(c) && c.estatus === 'Robado').length,
   };
 
   // Monthly intake
@@ -91,7 +99,7 @@ export const DashboardChartsView: React.FC<DashboardChartsViewProps> = ({
             Estatus Global de Clientes ({selectedYear})
           </h3>
 
-          <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
               <span className="text-[10px] font-bold uppercase text-emerald-800 block">Pólizas Activas</span>
               <h4 className="text-2xl font-black text-emerald-900 mt-1 tabular-nums">{statusCounts['Activos']}</h4>
@@ -100,8 +108,16 @@ export const DashboardChartsView: React.FC<DashboardChartsViewProps> = ({
               </span>
             </div>
 
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+              <span className="text-[10px] font-bold uppercase text-indigo-900 block">🟣 En Proceso / Trámite</span>
+              <h4 className="text-2xl font-black text-indigo-950 mt-1 tabular-nums">{statusCounts['En Proceso']}</h4>
+              <span className="text-[10px] text-indigo-700 font-medium">
+                {Math.round((statusCounts['En Proceso'] / totalCarrierCount) * 100)}% del total
+              </span>
+            </div>
+
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
-              <span className="text-[10px] font-bold uppercase text-blue-800 block">Nuevos / Proceso</span>
+              <span className="text-[10px] font-bold uppercase text-blue-800 block">Nuevos / Pendientes</span>
               <h4 className="text-2xl font-black text-blue-900 mt-1 tabular-nums">{statusCounts['Nuevos / Pendientes']}</h4>
               <span className="text-[10px] text-blue-700 font-medium">
                 {Math.round((statusCounts['Nuevos / Pendientes'] / totalCarrierCount) * 100)}% del total

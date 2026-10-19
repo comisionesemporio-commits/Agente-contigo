@@ -6,11 +6,14 @@ import {
   MONTHS_LIST, DEFAULT_SELLERS, DEFAULT_CARRIERS, DEFAULT_STATUSES,
   loadClients, saveClients, sanitizeClients, loadTasks, saveTasks, loadAgents, saveAgents,
   loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO,
-  loadCarrierConfigs, saveCarrierConfigs, autoRegisterCarriersFromClients, autoRegisterSingleCarrier
+  loadCarrierConfigs, saveCarrierConfigs, autoRegisterCarriersFromClients, autoRegisterSingleCarrier,
+  setSellerCustomPass, removeSellerCustomPass, getSellerPass
 } from './services/storage';
 import {
   initSupabase, mapClientToSupabaseRow, mapSupabaseRowToClient, getSupabaseConfig,
-  mapCalendarEventToSupabaseRow, mapSupabaseRowToCalendarEvent
+  mapCalendarEventToSupabaseRow, mapSupabaseRowToCalendarEvent,
+  saveVendedorToSupabase, deleteVendedorFromSupabase, fetchVendedoresFromSupabase,
+  saveCompaniaToSupabase, deleteCompaniaFromSupabase, fetchCompaniasFromSupabase
 } from './services/supabase';
 import { exportToExcelFile, downloadExcelTemplate, parseExcelOrCSVBuffer } from './services/excelService';
 
@@ -287,7 +290,38 @@ export default function App() {
 
       // Sincronizar también el calendario en la misma llamada
       await syncCalendarFromSupabase();
-    } catch (err: any) {
+
+      // Sincronizar vendedores y sus claves desde Supabase
+      try {
+        const cloudVendedores = await fetchVendedoresFromSupabase();
+        if (cloudVendedores.length > 0) {
+          const names = Array.from(new Set([...customSellers, ...cloudVendedores.map(v => v.nombre.trim())]));
+          setCustomSellers(names);
+          localStorage.setItem('polizas_vendedores', JSON.stringify(names));
+          cloudVendedores.forEach(v => {
+            if (v.clave) setSellerCustomPass(v.nombre, v.clave);
+          });
+        }
+      } catch (_) {}
+
+      // Sincronizar companias desde Supabase
+      try {
+        const cloudCompanias = await fetchCompaniasFromSupabase();
+        if (cloudCompanias.length > 0) {
+          const merged = [...carrierConfigs];
+          cloudCompanias.forEach(cc => {
+            const idx = merged.findIndex(m => m.name.toLowerCase() === cc.name.toLowerCase());
+            if (idx >= 0) {
+              merged[idx] = cc;
+            } else {
+              merged.push(cc);
+            }
+          });
+          setCarrierConfigs(merged);
+          saveCarrierConfigs(merged);
+        }
+      } catch (_) {}
+    } catch (err) {
       console.warn('Supabase sync notice:', err);
       setCloudStatus({ connected: false, message: 'Supabase (Modo Local)' });
     }
@@ -736,17 +770,87 @@ export default function App() {
 
   // Catalogs Handlers
   const handleAddSeller = (s: string) => {
-    if (!customSellers.includes(s)) {
-      const updated = [...customSellers, s];
+    handleAddSellerWithPass(s, 'Venta2026');
+  };
+
+  const handleAddSellerWithPass = async (sellerName: string, pass: string) => {
+    const clean = sellerName.trim();
+    if (!clean) return;
+    if (!customSellers.includes(clean)) {
+      const updated = [...customSellers, clean];
       setCustomSellers(updated);
       localStorage.setItem('polizas_vendedores', JSON.stringify(updated));
     }
+    const finalPass = pass.trim() || 'Venta2026';
+    setSellerCustomPass(clean, finalPass);
+
+    await saveVendedorToSupabase({
+      id: 'ven-' + clean.toLowerCase().replace(/\s+/g, '-'),
+      nombre: clean,
+      apellido: '',
+      clave: finalPass,
+      npn: '',
+      licencias: '',
+      compania: 'General',
+      notas: ''
+    });
+
+    showToast('Vendedor Registrado', `"${clean}" guardado en el sistema y en Supabase con su clave.`, 'success');
   };
 
-  const handleRemoveSeller = (s: string) => {
+  const handleUpdateSeller = async (oldName: string, newName: string, newPass?: string) => {
+    const cleanOld = oldName.trim();
+    const cleanNew = newName.trim();
+    if (!cleanNew) return;
+
+    const currentPass = newPass !== undefined ? newPass.trim() : getSellerPass(cleanOld);
+    removeSellerCustomPass(cleanOld);
+    setSellerCustomPass(cleanNew, currentPass);
+
+    const updatedSellers = customSellers.map(s => s.toLowerCase() === cleanOld.toLowerCase() ? cleanNew : s);
+    if (!updatedSellers.includes(cleanNew)) updatedSellers.push(cleanNew);
+    setCustomSellers(updatedSellers);
+    localStorage.setItem('polizas_vendedores', JSON.stringify(updatedSellers));
+
+    // Si cambió el nombre del vendedor, actualizarlo en las pólizas
+    if (cleanOld.toLowerCase() !== cleanNew.toLowerCase()) {
+      let count = 0;
+      const updatedClients = clients.map(c => {
+        if ((c.vendedor || '').toLowerCase() === cleanOld.toLowerCase()) {
+          count++;
+          return { ...c, vendedor: cleanNew };
+        }
+        return c;
+      });
+      if (count > 0) {
+        setClients(updatedClients);
+        saveClients(updatedClients);
+        updatedClients.filter(c => (c.vendedor || '').toLowerCase() === cleanNew.toLowerCase()).forEach(c => {
+          saveSingleClientToSupabase(c);
+        });
+      }
+    }
+
+    await saveVendedorToSupabase({
+      id: 'ven-' + cleanNew.toLowerCase().replace(/\s+/g, '-'),
+      nombre: cleanNew,
+      apellido: '',
+      clave: currentPass,
+      npn: '',
+      licencias: '',
+      compania: 'General',
+      notas: ''
+    });
+
+    showToast('Vendedor Guardado', `"${cleanNew}" y su clave actualizados permanentemente en Supabase.`, 'success');
+  };
+
+  const handleRemoveSeller = async (s: string) => {
     const updated = customSellers.filter(x => x !== s);
     setCustomSellers(updated);
     localStorage.setItem('polizas_vendedores', JSON.stringify(updated));
+    removeSellerCustomPass(s);
+    await deleteVendedorFromSupabase('ven-' + s.toLowerCase().replace(/\s+/g, '-'));
     showToast('Vendedor Removido', `"${s}" retirado de la lista.`, 'info');
   };
 
@@ -758,7 +862,7 @@ export default function App() {
     }
   };
 
-  const handleAddCarrierWithColor = (name: string, colorKey: string) => {
+  const handleAddCarrierWithColor = async (name: string, colorKey: string) => {
     const clean = name.trim();
     if (!clean) return;
     const exists = carrierConfigs.some(car => car.name.toLowerCase() === clean.toLowerCase());
@@ -774,10 +878,11 @@ export default function App() {
     const updated = [...carrierConfigs, newConfig];
     setCarrierConfigs(updated);
     saveCarrierConfigs(updated);
-    showToast('Compañía Agregada', `"${clean}" registrada con éxito.`, 'success');
+    await saveCompaniaToSupabase(newConfig);
+    showToast('Compañía Agregada', `"${clean}" registrada con éxito y guardada en Supabase.`, 'success');
   };
 
-  const handleUpdateCarrierName = (oldName: string, newName: string) => {
+  const handleUpdateCarrierName = async (oldName: string, newName: string) => {
     const cleanOld = oldName.trim();
     const cleanNew = newName.trim();
     if (!cleanNew || cleanNew.toLowerCase() === cleanOld.toLowerCase()) return;
@@ -787,6 +892,13 @@ export default function App() {
     ));
     setCarrierConfigs(updatedConfigs);
     saveCarrierConfigs(updatedConfigs);
+
+    const changedCfg = updatedConfigs.find(c => c.name.toLowerCase() === cleanNew.toLowerCase());
+    if (changedCfg) {
+      await saveCompaniaToSupabase(changedCfg);
+      // Remove old name from Supabase companias if it had a different id or name
+      await deleteCompaniaFromSupabase(cleanOld);
+    }
 
     // Actualizar nombre en todas las pólizas vinculadas
     let updatedClientsCount = 0;
@@ -814,20 +926,23 @@ export default function App() {
     );
   };
 
-  const handleUpdateCarrierColor = (carrierName: string, newColorKey: string) => {
+  const handleUpdateCarrierColor = async (carrierName: string, newColorKey: string) => {
     const updated = carrierConfigs.map(c => (
       c.name.toLowerCase() === carrierName.toLowerCase() ? { ...c, colorKey: newColorKey } : c
     ));
     setCarrierConfigs(updated);
     saveCarrierConfigs(updated);
+    const target = updated.find(c => c.name.toLowerCase() === carrierName.toLowerCase());
+    if (target) await saveCompaniaToSupabase(target);
     showToast('Color Actualizado', `Color distintivo de "${carrierName}" actualizado correctamente.`, 'success');
   };
 
-  const handleRemoveCarrier = (c: string) => {
+  const handleRemoveCarrier = async (c: string) => {
     const updated = carrierConfigs.filter(x => x.name.toLowerCase() !== c.toLowerCase());
     setCarrierConfigs(updated);
     saveCarrierConfigs(updated);
-    showToast('Compañía Removida', `"${c}" retirada de la lista.`, 'info');
+    await deleteCompaniaFromSupabase(c);
+    showToast('Compañía Removida', `"${c}" retirada de la lista y de Supabase.`, 'info');
   };
 
   const handleAddStatus = (st: string) => {
@@ -1615,6 +1730,8 @@ export default function App() {
                 carrierConfigs={carrierConfigs}
                 clientsCountByCarrier={clientsCountByCarrier}
                 onAddSeller={handleAddSeller}
+                onAddSellerWithPass={handleAddSellerWithPass}
+                onUpdateSeller={handleUpdateSeller}
                 onRemoveSeller={handleRemoveSeller}
                 onAddCarrier={handleAddCarrier}
                 onAddCarrierWithColor={handleAddCarrierWithColor}

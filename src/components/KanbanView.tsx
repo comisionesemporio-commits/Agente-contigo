@@ -15,13 +15,23 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
   onEditClient,
   onUpdateStatus
 }) => {
-  const yearClients = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
+  const yearClients: ClientPolicy[] = clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
 
+  const isProceso = (c: ClientPolicy) => {
+    const st = (c.estatus || '').toLowerCase();
+    const mig = (c.estatusMigratorio || '').toLowerCase();
+    const doc = (c.docStatus || '').toLowerCase();
+    return st.includes('proceso') || st.includes('proces') || st === 'en_progreso' ||
+           mig.includes('proceso') || mig.includes('proces') ||
+           doc.includes('proceso') || doc.includes('proces');
+  };
+
+  const listProceso = yearClients.filter((c: ClientPolicy) => isProceso(c));
   const listNuevo = yearClients.filter(
-    c => c.estatus === 'Nuevo' || c.estatus === 'Subido / Listo' || c.estatus === 'Pendiente'
+    (c: ClientPolicy) => !isProceso(c) && (c.estatus === 'Nuevo' || c.estatus === 'Subido / Listo' || c.estatus === 'Pendiente' || c.estatus === 'Cotizado')
   );
-  const listActivo = yearClients.filter(c => c.estatus === 'Activo');
-  const listCancelado = yearClients.filter(c => c.estatus === 'Cancelado' || c.estatus === 'Robado');
+  const listActivo = yearClients.filter((c: ClientPolicy) => !isProceso(c) && (c.estatus === 'Activo' || c.estatus === 'activos'));
+  const listCancelado = yearClients.filter((c: ClientPolicy) => !isProceso(c) && (c.estatus === 'Cancelado' || c.estatus === 'Robado'));
 
   return (
     <div className="space-y-4">
@@ -35,11 +45,11 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 overflow-x-auto pb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 overflow-x-auto pb-4">
         {/* Column 1: Nuevos por Procesar */}
-        <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex flex-col min-w-[280px]">
+        <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex flex-col min-w-[260px]">
           <div className="flex items-center justify-between font-bold text-xs text-blue-800 mb-3 pb-2 border-b border-blue-200">
-            <span>🔵 NUEVO POR PROCESAR</span>
+            <span>🔵 NUEVOS / PENDIENTES</span>
             <span className="bg-blue-200 text-blue-900 px-2 py-0.5 rounded-full text-[10px] font-black">
               {listNuevo.length}
             </span>
@@ -70,6 +80,15 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
                   <div className="pt-2 border-t border-slate-100 flex justify-end" onClick={e => e.stopPropagation()}>
                     <button
                       type="button"
+                      onClick={() => onUpdateStatus(c.id, 'En Proceso')}
+                      className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg transition border border-indigo-200 flex items-center gap-1"
+                      title="Mover a En Proceso"
+                    >
+                      <span>A Proceso</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => onUpdateStatus(c.id, 'Activo')}
                       className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg transition border border-emerald-200 flex items-center gap-1"
                       title="Mover a Activo"
@@ -84,7 +103,65 @@ export const KanbanView: React.FC<KanbanViewProps> = ({
           </div>
         </div>
 
-        {/* Column 2: Activos */}
+        {/* Column 2: En Proceso / Trámite */}
+        <div className="bg-slate-100 p-3 rounded-xl border border-indigo-200 flex flex-col min-w-[260px]">
+          <div className="flex items-center justify-between font-bold text-xs text-indigo-900 mb-3 pb-2 border-b border-indigo-200">
+            <span>🟣 EN PROCESO / TRÁMITE</span>
+            <span className="bg-indigo-200 text-indigo-950 px-2 py-0.5 rounded-full text-[10px] font-black">
+              {listProceso.length}
+            </span>
+          </div>
+
+          <div className="space-y-2.5 flex-1 min-h-[350px]">
+            {listProceso.length === 0 ? (
+              <div className="text-center p-6 text-slate-400 text-xs">Sin registros en proceso</div>
+            ) : (
+              listProceso.map(c => (
+                <div
+                  key={c.id}
+                  onClick={() => onEditClient(c)}
+                  className="bg-white p-3.5 rounded-xl border-l-4 border-l-indigo-500 border border-slate-200 shadow-sm hover:shadow transition cursor-pointer space-y-2"
+                >
+                  <div className="flex justify-between items-start gap-1">
+                    <span className="font-extrabold text-xs text-slate-900">{c.nombre}</span>
+                    <span className="bg-indigo-100 text-indigo-900 text-[10px] font-bold px-1.5 py-0.5 rounded border border-indigo-200 shrink-0">
+                      {c.carrier || 'General'}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-slate-500 flex items-center justify-between">
+                    <span>👤 {c.vendedor || 'General'}</span>
+                    <span className="bg-indigo-50 text-indigo-800 text-[10px] font-bold px-1 rounded">
+                      {c.estatus || c.estatusMigratorio || 'En Proceso'}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex justify-between" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateStatus(c.id, 'Nuevo')}
+                      className="px-2 py-1 text-slate-500 hover:text-slate-800 text-[10px] font-semibold rounded flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3 h-3" />
+                      <span>Nuevo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onUpdateStatus(c.id, 'Activo')}
+                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg transition border border-emerald-200 flex items-center gap-1"
+                    >
+                      <span>Aprobar</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Column 3: Activos */}
         <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex flex-col min-w-[280px]">
           <div className="flex items-center justify-between font-bold text-xs text-emerald-800 mb-3 pb-2 border-b border-emerald-200">
             <span>🟢 ACTIVOS</span>

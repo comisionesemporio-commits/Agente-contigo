@@ -221,10 +221,18 @@ export function parseExcelOrCSVBuffer(buffer: ArrayBuffer, selectedYear: string)
       estatusRaw = 'Cancelado';
     } else if (lowerEst.includes('rob')) {
       estatusRaw = 'Robado';
-    } else if (lowerEst === 'nuevo' || lowerEst === 'pendiente' || lowerEst === 'subido / listo') {
-      // conservar
+    } else if (lowerEst.includes('proceso') || lowerEst.includes('proces') || lowerEst.includes('tramit')) {
+      estatusRaw = 'En Proceso';
+    } else if (lowerEst.includes('cotiz')) {
+      estatusRaw = 'Cotizado';
+    } else if (lowerEst.includes('pendient')) {
+      estatusRaw = 'Pendiente';
+    } else if (lowerEst.includes('subid') || lowerEst.includes('listo')) {
+      estatusRaw = 'Subido / Listo';
+    } else if (lowerEst.includes('nuevo')) {
+      estatusRaw = 'Nuevo';
     } else {
-      estatusRaw = 'Activo';
+      estatusRaw = estatusRaw || 'Activo';
     }
 
     const mesIngresoRaw = String(getVal(mapping.mesIngreso, 1) || 'Enero').trim();

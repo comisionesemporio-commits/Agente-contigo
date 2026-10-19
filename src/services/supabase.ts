@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { ClientPolicy, CalendarEvent } from '../types';
+import { ClientPolicy, CalendarEvent, Agent, CarrierConfig } from '../types';
 import {
   DEFAULT_SUPABASE_KEY, DEFAULT_SUPABASE_URL,
   formatToUSDate, formatToISODate, formatDateToHumanSpanish, calculateAgeFromDBO
@@ -138,10 +138,17 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     ssn: client.ssn || '',
     estado: (client.estadoUSA || 'GA').toUpperCase(),
     vendedor: client.vendedor || 'General',
+    agente: client.agente || client.vendedor || 'General',
     estatus: client.estatus || 'Activo',
     anio: parseInt(client.createdYear || "2026") || 2026,
     direccion: client.direccion || '',
     metodo_pago: client.metodoPago || 'Tarjeta de Crédito',
+    carrier: client.carrier || 'Oscar',
+    compania: client.carrier || 'Oscar',
+    aseguradora: client.carrier || 'Oscar',
+    nombre_plan: client.nombrePlan || '',
+    plan: client.nombrePlan || '',
+    num_poliza: client.numPoliza || '',
     enfermedades: JSON.stringify(extraData)
   };
 
@@ -163,6 +170,10 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
   const usDbo = formatToUSDate(rawDbo);
   const calculatedAge = parseInt(row.edad || extraData.edad) || calculateAgeFromDBO(usDbo);
 
+  // Aseguradora: dar prioridad a lo que el usuario guardó en extraData o row.carrier/aseguradora
+  const resolvedCarrier = extraData.carrier || row.carrier || row.aseguradora || row.compania || 'Oscar';
+  const resolvedPlan = extraData.nombrePlan || row.nombre_plan || row.nombrePlan || row.plan || '';
+
   return {
     id: row.id ? String(row.id) : ("client-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4)),
     nombre: fullName,
@@ -170,7 +181,7 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
     datosDependientes: extraData.datosDependientes || row.datosDependientes || '',
     estadoUSA: (row.estado || 'GA').toUpperCase(),
     mesIngreso: row.mesIngreso || row.activo_desde || extraData.mesIngreso || 'Enero',
-    estatus: row.estatus || row.estado_poliza || 'Activo',
+    estatus: row.estatus || row.estado_poliza || extraData.estatus || 'Activo',
     ssn: row.ssn || '',
     docStatus: row.docStatus || row.documento || extraData.docStatus || 'Documento Completos',
     estatusMigratorio: row.estatusMigratorio || extraData.estatusMigratorio || 'Ciudadano',
@@ -185,13 +196,13 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
     ingresoMonto: parseFloat(row.ingresoMonto || extraData.ingresoMonto) || 0,
     primaMonto: parseFloat(row.primaMonto || extraData.primaMonto) || 0,
     notas: row.notas || row.nota || '',
-    vendedor: row.vendedor || 'General',
+    vendedor: row.vendedor || extraData.vendedor || 'General',
     agente: row.agente || extraData.agente || row.vendedor || 'General',
-    carrier: row.carrier || row.aseguradora || extraData.carrier || 'Oscar',
+    carrier: resolvedCarrier,
     numPoliza: row.numPoliza || row.num_poliza || extraData.numPoliza || '',
     createdDate: formatToUSDate(row.createdDate || extraData.createdDate || row.created_at || ''),
     createdYear: String(row.anio || row.createdYear || defaultYear),
-    nombrePlan: extraData.nombrePlan || row.nombrePlan || '',
+    nombrePlan: resolvedPlan,
     peso: extraData.peso || row.peso || '',
     altura: extraData.altura || row.altura || '',
     bancoNombre: extraData.bancoNombre || row.bancoNombre || '',
@@ -328,11 +339,36 @@ CREATE TABLE IF NOT EXISTS public.eventos_calendario (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. POLÍTICAS DE ACCESO PÚBLICO (Row Level Security)
+-- 5. TABLA: vendedores (Directorio de Agentes, Perfiles y Contraseñas Únicas)
+CREATE TABLE IF NOT EXISTS public.vendedores (
+  id TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  apellido TEXT,
+  clave TEXT,
+  npn TEXT,
+  licencias TEXT,
+  compania TEXT,
+  email TEXT,
+  telefono TEXT,
+  notas TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 6. TABLA: companias (Configuración Centralizada de Aseguradoras y Colores de Etiquetas)
+CREATE TABLE IF NOT EXISTS public.companias (
+  id TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  color_key TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. POLÍTICAS DE ACCESO PÚBLICO (Row Level Security)
 ALTER TABLE public.clientes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cotizaciones ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tareas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.eventos_calendario ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vendedores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.companias ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public access clientes" ON public.clientes;
 CREATE POLICY "Public access clientes" ON public.clientes FOR ALL USING (true) WITH CHECK (true);
@@ -346,16 +382,144 @@ CREATE POLICY "Public access tareas" ON public.tareas FOR ALL USING (true) WITH 
 DROP POLICY IF EXISTS "Public access eventos_calendario" ON public.eventos_calendario;
 CREATE POLICY "Public access eventos_calendario" ON public.eventos_calendario FOR ALL USING (true) WITH CHECK (true);
 
--- 6. HABILITAR SINCRONIZACIÓN EN TIEMPO REAL (Realtime)
+DROP POLICY IF EXISTS "Public access vendedores" ON public.vendedores;
+CREATE POLICY "Public access vendedores" ON public.vendedores FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public access companias" ON public.companias;
+CREATE POLICY "Public access companias" ON public.companias FOR ALL USING (true) WITH CHECK (true);
+
+-- 8. HABILITAR SINCRONIZACIÓN EN TIEMPO REAL (Realtime)
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
     BEGIN
-      ALTER PUBLICATION supabase_realtime ADD TABLE public.clientes, public.eventos_calendario;
+      ALTER PUBLICATION supabase_realtime ADD TABLE public.clientes, public.eventos_calendario, public.vendedores, public.companias;
     EXCEPTION WHEN duplicate_object THEN
       NULL;
     END;
   END IF;
 END $$;
 `;
+}
+
+// ---------------------------------------------------------------------------
+// OPERACIONES CRUD EN SUPABASE PARA VENDEDORES, COMPAÑÍAS Y COTIZACIONES
+// ---------------------------------------------------------------------------
+
+export async function fetchVendedoresFromSupabase(): Promise<Agent[]> {
+  const sb = initSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from('vendedores').select('*').order('nombre', { ascending: true });
+    if (error) {
+      console.warn('Aviso leyendo vendedores de Supabase:', error.message);
+      return [];
+    }
+    if (Array.isArray(data)) {
+      return data.map(row => ({
+        id: String(row.id),
+        nombre: String(row.nombre || '').trim(),
+        apellido: String(row.apellido || '').trim(),
+        clave: row.clave ? String(row.clave).trim() : '',
+        npn: String(row.npn || ''),
+        licencias: String(row.licencias || ''),
+        compania: String(row.compania || 'General'),
+        notas: String(row.notas || ''),
+        email: String(row.email || ''),
+        telefono: String(row.telefono || '')
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching vendedores:', err);
+  }
+  return [];
+}
+
+export async function saveVendedorToSupabase(vendedor: Agent): Promise<boolean> {
+  const sb = initSupabase();
+  if (!sb) return false;
+  try {
+    const payload = {
+      id: vendedor.id || ('ag-' + Date.now()),
+      nombre: vendedor.nombre.trim(),
+      apellido: vendedor.apellido?.trim() || '',
+      clave: vendedor.clave?.trim() || '',
+      npn: vendedor.npn?.trim() || '',
+      licencias: vendedor.licencias?.trim() || '',
+      compania: vendedor.compania?.trim() || 'General',
+      notas: vendedor.notas?.trim() || '',
+      email: vendedor.email?.trim() || '',
+      telefono: vendedor.telefono?.trim() || ''
+    };
+    const { error } = await sb.from('vendedores').upsert([payload]);
+    if (error) {
+      console.warn('Aviso guardando vendedor en Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error saving vendedor to Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteVendedorFromSupabase(id: string): Promise<boolean> {
+  const sb = initSupabase();
+  if (!sb) return false;
+  try {
+    const { error } = await sb.from('vendedores').delete().eq('id', id);
+    return !error;
+  } catch (err) {
+    return false;
+  }
+}
+
+export async function fetchCompaniasFromSupabase(): Promise<CarrierConfig[]> {
+  const sb = initSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb.from('companias').select('*').order('nombre', { ascending: true });
+    if (error) {
+      console.warn('Aviso leyendo companias de Supabase:', error.message);
+      return [];
+    }
+    if (Array.isArray(data) && data.length > 0) {
+      return data.map(row => ({
+        id: String(row.id),
+        name: String(row.nombre || '').trim(),
+        colorKey: String(row.color_key || 'orange').trim()
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching companias:', err);
+  }
+  return [];
+}
+
+export async function saveCompaniaToSupabase(compania: CarrierConfig): Promise<boolean> {
+  const sb = initSupabase();
+  if (!sb) return false;
+  try {
+    const payload = {
+      id: compania.id,
+      nombre: compania.name.trim(),
+      color_key: compania.colorKey.trim()
+    };
+    const { error } = await sb.from('companias').upsert([payload]);
+    return !error;
+  } catch (err) {
+    console.warn('Error saving compania to Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteCompaniaFromSupabase(idOrName: string): Promise<boolean> {
+  const sb = initSupabase();
+  if (!sb) return false;
+  try {
+    await sb.from('companias').delete().or(`id.eq.${idOrName},nombre.ilike.${idOrName}`);
+    return true;
+  } catch (err) {
+    return false;
+  }
 }

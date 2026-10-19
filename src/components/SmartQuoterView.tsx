@@ -4,7 +4,7 @@ import {
   Sparkles, Upload, Copy, Printer, Save, CheckCircle2,
   AlertCircle, Search, Plus, Trash2, Globe, FileText,
   DollarSign, Shield, HeartPulse, Building, User, Key,
-  ChevronDown, ExternalLink, RefreshCw, Eye, X
+  ChevronDown, ExternalLink, RefreshCw, Eye, X, Send
 } from 'lucide-react';
 import {
   getGeminiApiKey, setGeminiApiKey, loadQuotes, saveQuotes
@@ -118,23 +118,32 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   }, []);
 
   const processIncomingFiles = (files: File[]) => {
-    const validImages = files.filter(f => f.type.startsWith('image/'));
-    if (validImages.length === 0) {
-      onShowToast('Formato Incorrecto', 'Por favor sube solo imágenes (PNG, JPG, JPEG).', 'error');
+    const validFiles = files.filter(f => f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    if (validFiles.length === 0) {
+      onShowToast('Formato Incorrecto', 'Por favor sube imágenes (PNG, JPG) o documentos PDF de cotización.', 'error');
       return;
     }
 
-    validImages.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        const dataUrl = ev.target?.result as string;
-        const base64 = dataUrl.split(',')[1];
-        setUploadedFiles(prev => [
-          ...prev,
-          { name: file.name, dataUrl, base64, mimeType: file.type }
-        ]);
-      };
-      reader.readAsDataURL(file);
+    Promise.all(
+      validFiles.map(file => {
+        return new Promise<{ name: string; dataUrl: string; base64: string; mimeType: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = ev => {
+            const dataUrl = ev.target?.result as string;
+            const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+            const mimeType = file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+            resolve({ name: file.name, dataUrl, base64, mimeType });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      })
+    ).then(newFiles => {
+      setUploadedFiles(prev => [...prev, ...newFiles]);
+      onShowToast('Archivos Cargados', `${newFiles.length} archivo(s) listo(s) para analizar con IA.`, 'success');
+    }).catch(err => {
+      console.error('Error procesando archivos:', err);
+      onShowToast('Error', 'No se pudieron procesar algunos archivos.', 'error');
     });
   };
 
@@ -195,11 +204,11 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     }
 
     setIsAnalyzingAI(true);
-    setAiStatusText('Enviando imágenes a Gemini 3.8 Flash...');
+    setAiStatusText('Analizando documentos y capturas con Gemini AI...');
 
     try {
-      // Direct client call to Gemini 3.8 Flash using the official API endpoint
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${keyToUse}`;
+      // Direct client call to Gemini 2.5 Flash using the official API endpoint
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToUse}`;
 
       const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare, UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar, Cigna, etc.).
 Analiza cuidadosamente las imágenes adjuntas, que son capturas de pantalla de cotizaciones de seguros de salud.
@@ -369,7 +378,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     onShowToast('Buscando en Google...', `Buscando folleto de ${plan.company} en internet...`, 'info');
 
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${keyToUse}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToUse}`;
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -393,7 +402,33 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     }
   };
 
-  // WhatsApp Message Generator
+  // Mensaje de Texto / SMS Resumido para el cliente
+  const copyShortTextMessage = () => {
+    let msg = `Hola ${clientName}, te saluda ${agentName || 'tu asesor'} de Agente Contigo.\n`;
+    msg += `Te preparé la propuesta de seguro médico ${quoteYear} para ${clientLocation}:\n\n`;
+
+    plans.forEach((plan, i) => {
+      msg += `📌 Opción ${i + 1}: ${plan.company} - ${plan.planName || plan.tier}\n`;
+      msg += `• Mensualidad: $${plan.premium}/mes | Deducible: ${plan.deductible}\n`;
+      msg += `• Médico: ${plan.primaryCare} | Especialista: ${plan.specialist} | Medicinas: ${plan.genericRx}\n`;
+      if (plan.clientSummary) {
+        msg += `• Resumen: ${plan.clientSummary}\n`;
+      }
+      msg += `\n`;
+    });
+
+    const total = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
+    if (plans.length > 1) {
+      msg += `💵 Total mensual estimado: $${total.toFixed(2)}/mes\n\n`;
+    }
+
+    msg += `📄 Te adjunté también el PDF con la explicación completa y desglose de beneficios. ¿Con cuál opción te gustaría que avancemos?`;
+
+    navigator.clipboard.writeText(msg);
+    onShowToast('¡SMS Resumido Copiado!', 'Mensaje de texto resumido listo para enviar al cliente.', 'success');
+  };
+
+  // WhatsApp Message Generator (Formato completo para WhatsApp)
   const copyWhatsAppMessage = () => {
     let msg = `🏥 *COTIZACIÓN DE SEGURO MÉDICO ${quoteYear}*\n`;
     msg += `👋 ¡Hola ${clientName}! Un gusto saludarte de parte de *Agente Contigo*.\n\n`;
@@ -571,8 +606,19 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
 
           <button
             type="button"
+            onClick={copyShortTextMessage}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+            title="Copiar mensaje de texto SMS resumido para enviar al cliente"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Copiar Mensaje SMS</span>
+          </button>
+
+          <button
+            type="button"
             onClick={copyWhatsAppMessage}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+            title="Copiar formato completo para WhatsApp"
           >
             <Copy className="w-3.5 h-3.5" />
             <span>Copiar para WhatsApp</span>
@@ -595,7 +641,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
             title="Imprimir únicamente la cotización resumida en PDF"
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Imprimir / PDF</span>
+            <span>Imprimir / Guardar PDF</span>
           </button>
 
           <button
@@ -720,7 +766,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
           >
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf,.pdf"
               multiple
               onChange={e => e.target.files && processIncomingFiles(Array.from(e.target.files))}
               className="absolute inset-0 opacity-0 cursor-pointer"
@@ -730,10 +776,10 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
                 <Upload className="w-5 h-5" />
               </div>
               <p className="text-xs font-bold text-slate-800">
-                Haz clic para subir o arrastra tus capturas aquí
+                Haz clic para subir o arrastra tus capturas o documentos PDF aquí
               </p>
               <p className="text-[11px] text-slate-400">
-                💡 Puedes tomar captura (<kbd className="px-1 bg-slate-200 rounded">Win+Shift+S</kbd> o <kbd className="px-1 bg-slate-200 rounded">Cmd+Shift+4</kbd>) y presionar <kbd className="px-1 bg-slate-200 rounded font-bold">Ctrl + V</kbd> para pegarla al instante.
+                💡 Acepta capturas (PNG, JPG) o folletos/cotizaciones oficiales en PDF. También puedes pegar (<kbd className="px-1 bg-slate-200 rounded font-bold">Ctrl + V</kbd>).
               </p>
             </div>
           </div>
@@ -743,12 +789,21 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
             <div className="flex flex-wrap gap-2 pt-1">
               {uploadedFiles.map((file, idx) => (
                 <div key={idx} className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100 shrink-0">
-                  <img src={file.dataUrl} alt={file.name} className="w-full h-full object-cover" />
+                  {file.mimeType?.includes('pdf') || file.name.toLowerCase().endsWith('.pdf') ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 p-1 text-center">
+                      <FileText className="w-7 h-7 text-rose-500 mb-0.5" />
+                      <span className="text-[9px] font-black text-rose-800 line-clamp-1 break-all px-0.5">
+                        {file.name.slice(0, 10)}
+                      </span>
+                    </div>
+                  ) : (
+                    <img src={file.dataUrl} alt={file.name} className="w-full h-full object-cover" />
+                  )}
                   <button
                     type="button"
                     onClick={() => removeFile(idx)}
                     className="absolute top-1 right-1 w-5 h-5 bg-rose-600 text-white rounded-full flex items-center justify-center text-xs opacity-90 hover:opacity-100 shadow transition cursor-pointer"
-                    title="Remover imagen"
+                    title="Remover archivo"
                   >
                     ×
                   </button>
@@ -1231,11 +1286,29 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={copyShortTextMessage}
+            className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            title="Copiar mensaje de texto SMS resumido para enviar al cliente"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Copiar Mensaje SMS</span>
+          </button>
+          <button
+            type="button"
+            onClick={copyWhatsAppMessage}
+            className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            title="Copiar formato para WhatsApp"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Copiar WhatsApp</span>
+          </button>
           <button
             type="button"
             onClick={() => setShowPrintModal(true)}
-            className="flex-1 sm:flex-none px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+            className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Eye className="w-4 h-4 text-slate-500" />
             <span>Vista Previa</span>
@@ -1243,10 +1316,10 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
           <button
             type="button"
             onClick={handlePrintProposal}
-            className="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            className="px-5 py-2.5 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>Imprimir Formato / Guardar como PDF</span>
+            <span>Imprimir / Guardar como PDF</span>
           </button>
         </div>
       </div>
