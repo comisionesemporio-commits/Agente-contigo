@@ -14,7 +14,7 @@ export const DEFAULT_CARRIERS = [
 ];
 
 export const DEFAULT_STATUSES = [
-  "Activo", "En Proceso", "Cotizado", "Nuevo", "Subido / Listo", "Pendiente", "Cancelado", "Robado"
+  "Activo", "Autorizado", "En Proceso", "Cotizado", "Nuevo", "Subido / Listo", "Pendiente", "Cancelado", "Robado"
 ];
 
 export const DEFAULT_SUPABASE_URL = "https://kyyddkrqmlohviakcxsg.supabase.co";
@@ -891,6 +891,16 @@ export function getPolicyStatusStyle(rawStatus?: string): PolicyStatusStyle {
       dotColor: 'bg-emerald-500',
       rowBorder: 'border-l-3 border-l-emerald-500',
       rowBg: 'hover:bg-slate-50/80'
+    };
+  }
+
+  if (lower.includes('autoriz')) {
+    return {
+      label: 'Autorizado',
+      badgeClass: 'bg-cyan-100 text-cyan-950 border-cyan-400 font-black',
+      dotColor: 'bg-cyan-600',
+      rowBorder: 'border-l-3 border-l-cyan-600',
+      rowBg: 'bg-cyan-50/20 hover:bg-cyan-50/50'
     };
   }
 

@@ -861,7 +861,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
               {/* Botones de selección rápida de estatus */}
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {['Activo', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
+                {['Activo', 'Autorizado', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
                   const isChecked = parseClientStatuses(formData.estatus).some(s => s.toLowerCase() === opt.toLowerCase());
                   const optStyle = getPolicyStatusStyle(opt);
                   return (

@@ -244,6 +244,11 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
           return clientStatuses.some(st => st === 'activo' || st === 'activos' || st === 'active');
         }
 
+        // Coincidencia para "Autorizado"
+        if (sel.includes('autoriz')) {
+          return clientStatuses.some(st => st.includes('autoriz')) || clientStatusStr.includes('autoriz');
+        }
+
         // 3. Coincidencia para "Nuevo" o "Nuevo por procesar"
         if (sel === 'nuevo por procesar' || sel === 'nuevo') {
           return clientStatuses.some(st => st === 'nuevo' || st.includes('subid') || st === 'pendiente') || isClientProceso(c);
@@ -358,6 +363,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   const availableStatuses = useMemo(() => {
     const list: Array<{ label: string; dot: string }> = [
       { label: 'Activo', dot: 'bg-emerald-500' },
+      { label: 'Autorizado', dot: 'bg-cyan-500' },
       { label: 'En Proceso', dot: 'bg-indigo-500' },
       { label: 'Cotizado', dot: 'bg-amber-500' },
       { label: 'Nuevo', dot: 'bg-blue-500' },
@@ -403,6 +409,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       const statuses = parseClientStatuses(c.estatus).map(s => s.toLowerCase());
       return statuses.some(st => {
         if (lower === 'activo') return st === 'activo' || st === 'activos' || st === 'active';
+        if (lower.includes('autoriz')) return st.includes('autoriz');
         if (lower.includes('cancel')) return st.includes('cancel');
         if (lower.includes('rob')) return st.includes('rob');
         if (lower.includes('cotiz')) return st.includes('cotiz');
@@ -848,8 +855,8 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                                     Puedes seleccionar <strong>varios estatus</strong> (ej. <em>Activo</em> y <em>Cotizado</em>):
                                   </p>
 
-                                  <div className="max-h-48 overflow-y-auto space-y-1 p-0.5">
-                                    {['Activo', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
+                                   <div className="max-h-48 overflow-y-auto space-y-1 p-0.5">
+                                    {['Activo', 'Autorizado', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
                                       const isChecked = clientStatuses.some(s => s.toLowerCase() === opt.toLowerCase());
                                       const optStyle = getPolicyStatusStyle(opt);
                                       return (
@@ -875,7 +882,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                                     })}
 
                                     {/* Mostrar cualquier otro estatus personalizado que ya tenga este cliente */}
-                                    {clientStatuses.filter(s => !['Activo', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].some(opt => opt.toLowerCase() === s.toLowerCase())).map(customSt => (
+                                    {clientStatuses.filter(s => !['Activo', 'Autorizado', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].some(opt => opt.toLowerCase() === s.toLowerCase())).map(customSt => (
                                       <label
                                         key={customSt}
                                         className="flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer transition text-[11px] font-black bg-cyan-50 text-cyan-950 ring-1 ring-cyan-200"

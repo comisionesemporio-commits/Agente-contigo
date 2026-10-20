@@ -83,7 +83,16 @@ export default function App() {
   const [customStatuses, setCustomStatuses] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('polizas_custom_statuses');
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (!parsed.some((s: string) => s.toLowerCase() === 'autorizado')) {
+            parsed.splice(1, 0, 'Autorizado');
+            localStorage.setItem('polizas_custom_statuses', JSON.stringify(parsed));
+          }
+          return parsed;
+        }
+      }
     } catch (e) {}
     return DEFAULT_STATUSES;
   });
