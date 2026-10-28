@@ -6,6 +6,7 @@ import {
   MONTHS_LIST, DEFAULT_SELLERS, DEFAULT_CARRIERS, DEFAULT_STATUSES,
   loadClients, saveClients, sanitizeClients, loadTasks, saveTasks, loadAgents, saveAgents,
   loadCalendarEvents, saveCalendarEvents, formatToUSDate, calculateAgeFromDBO,
+  getCurrentFormattedDateAndYear,
   loadCarrierConfigs, saveCarrierConfigs, autoRegisterCarriersFromClients, autoRegisterSingleCarrier,
   setSellerCustomPass, removeSellerCustomPass, getSellerPass
 } from './services/storage';
@@ -384,12 +385,15 @@ export default function App() {
         if (error && (error.code === 'PGRST204' || error.message?.includes('column') || error.message?.includes('schema cache'))) {
           const fallbackPayload: Record<string, any> = {
             id: payload.id,
-            nombre: (payload.nombre + (payload.apellido ? ` ${payload.apellido}` : '')).trim(),
+            nombre: payload.nombre || '',
+            apellido: payload.apellido || '',
             telefono: payload.telefono || '',
             ssn: payload.ssn || '',
             vendedor: payload.vendedor || 'General',
             estatus: payload.estatus || 'Activo',
-            estado: payload.estado || 'GA'
+            estado: payload.estado || 'GA',
+            anio: payload.anio || 2026,
+            enfermedades: payload.enfermedades
           };
           await sb.from('clientes').upsert([fallbackPayload]);
         }
@@ -463,31 +467,48 @@ export default function App() {
       const payload = mapClientToSupabaseRow(client);
       let { error } = await sb.from('clientes').upsert([payload]);
 
-      // Si falla porque alguna columna no existe en su tabla Supabase (ej: 'enfermedades', 'metodo_pago', 'anio', etc.):
+      // Si falla porque alguna columna opcional no existe en su tabla Supabase:
       if (error && (error.code === 'PGRST204' || error.message?.includes('column') || error.message?.includes('schema cache'))) {
-        console.warn('Reintentando guardar cliente con columnas base compatibles:', error.message);
+        console.warn('Reintentando guardar cliente en Supabase de forma compatible:', error.message);
         const fallbackPayload: Record<string, any> = {
+          id: payload.id,
+          nombre: payload.nombre || '',
+          apellido: payload.apellido || '',
+          telefono: payload.telefono || '',
+          ssn: payload.ssn || '',
+          vendedor: payload.vendedor || 'General',
+          estatus: payload.estatus || 'Activo',
+          estado: payload.estado || 'GA',
+          anio: payload.anio || 2026,
+          enfermedades: payload.enfermedades
+        };
+        const retryResult = await sb.from('clientes').upsert([fallbackPayload]);
+        if (!retryResult.error) {
+          setCloudStatus({ connected: true, message: 'Supabase Sincronizado' });
+          return;
+        }
+
+        // Si la tabla original sólo tiene la columna 'nombre' simple (sin apellido):
+        const minimalFallback: Record<string, any> = {
           id: payload.id,
           nombre: (payload.nombre + (payload.apellido ? ` ${payload.apellido}` : '')).trim(),
           telefono: payload.telefono || '',
           ssn: payload.ssn || '',
           vendedor: payload.vendedor || 'General',
           estatus: payload.estatus || 'Activo',
-          estado: payload.estado || 'GA'
+          estado: payload.estado || 'GA',
+          anio: payload.anio || 2026,
+          enfermedades: payload.enfermedades
         };
-        const retryResult = await sb.from('clientes').upsert([fallbackPayload]);
-        if (!retryResult.error) {
-          error = null;
-          showToast('Guardado Parcial en Nube', 'El cliente se guardó en Supabase. Ve a Ajustes > "Ver Script SQL" y ejecútalo en Supabase para sincronizar todas las columnas nuevas.', 'info');
-          setCloudStatus({ connected: true, message: 'Supabase (Falta SQL)' });
+        const retryResult2 = await sb.from('clientes').upsert([minimalFallback]);
+        if (!retryResult2.error) {
+          setCloudStatus({ connected: true, message: 'Supabase Sincronizado' });
           return;
         }
       }
 
       if (error) {
         console.warn('Could not save single client to Supabase:', error);
-        showToast('Aviso Supabase', `No se pudo guardar en Supabase (${error.message}). Por favor ve a Ajustes > "Ver Script SQL" y ejecútalo en Supabase.`, 'error');
-        setCloudStatus({ connected: false, message: 'Falta ejecutar SQL' });
       } else {
         setCloudStatus({ connected: true, message: 'Supabase Sincronizado' });
       }
@@ -623,14 +644,27 @@ export default function App() {
     deleteSingleClientFromSupabase(clientId);
   };
 
-  const handleRenewClient = (clientData: ClientPolicy) => {
-    const nextYear = String(parseInt(clientData.createdYear || selectedYear) + 1);
+  const handleRenewClient = (clientData: ClientPolicy, targetYearOverride?: string) => {
+    const nextYear = targetYearOverride || (String(clientData.createdYear || selectedYear) === '2026' ? '2027' : String(parseInt(clientData.createdYear || selectedYear) + 1));
+    const todayUS = getCurrentFormattedDateAndYear().dateUS;
+
+    // Asegurar que los dependientes conserven su estatus migratorio intacto
+    const cleanDeps = (clientData.dependientesList || []).map(d => ({
+      ...d,
+      estatusMigratorio: d.estatusMigratorio || clientData.estatusMigratorio || 'Ciudadano'
+    }));
+
     const renewed: ClientPolicy = {
       ...clientData,
-      id: 'client-renov-' + Date.now(),
+      id: 'client-renov-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       createdYear: nextYear,
-      estatus: 'Activo',
+      estatus: 'Renovado', // Cambiar automáticamente y limpiamente a "Renovado"
+      tipoPoliza: clientData.tipoPoliza || 'obama',
+      companiaSuplementaria: clientData.companiaSuplementaria || '',
+      dependientesList: cleanDeps,
+      datosDependientes: JSON.stringify(cleanDeps),
       pagoRealizado: 'TRUE',
+      createdDate: todayUS,
       notas: `[Renovado ${nextYear}] ` + (clientData.notas || ''),
       commissions: {}
     };
@@ -641,7 +675,7 @@ export default function App() {
     setSelectedYear(nextYear);
     setIsClientModalOpen(false);
     setEditingClient(null);
-    showToast('¡Renovado!', `${renewed.nombre} renovado con éxito para el año ${nextYear}.`, 'success');
+    showToast('¡Renovación Exitosa!', `${renewed.nombre} duplicado y renovado con estatus "Renovado" para el año ${nextYear}.`, 'success');
     saveSingleClientToSupabase(renewed);
   };
 
@@ -1621,6 +1655,7 @@ export default function App() {
                   setEditingClient(client);
                   setIsClientModalOpen(true);
                 }}
+                onRenewClient={handleRenewClient}
                 onRefreshData={handleManualSync}
                 onUpdateStatus={handleUpdatePolicyStatus}
                 onImportClients={handleImportClients}

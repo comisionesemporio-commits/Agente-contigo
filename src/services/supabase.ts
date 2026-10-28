@@ -141,17 +141,10 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     ssn: client.ssn || '',
     estado: (client.estadoUSA || 'GA').toUpperCase(),
     vendedor: client.vendedor || 'General',
-    agente: client.agente || client.vendedor || 'General',
     estatus: client.estatus || 'Activo',
     anio: parseInt(client.createdYear || "2026") || 2026,
     direccion: client.direccion || '',
     metodo_pago: client.metodoPago || 'Tarjeta de Crédito',
-    carrier: client.carrier || 'Oscar',
-    compania: client.carrier || 'Oscar',
-    aseguradora: client.carrier || 'Oscar',
-    nombre_plan: client.nombrePlan || '',
-    plan: client.nombrePlan || '',
-    num_poliza: client.numPoliza || '',
     enfermedades: JSON.stringify(extraData)
   };
 

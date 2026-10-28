@@ -33,7 +33,7 @@ interface ClientModalProps {
   onClose: () => void;
   onSave: (clientData: ClientPolicy) => void;
   onDelete: (clientId: string) => void;
-  onRenew: (clientData: ClientPolicy) => void;
+  onRenew: (clientData: ClientPolicy, targetYearOverride?: string) => void;
 }
 
 export const ClientModal: React.FC<ClientModalProps> = ({
@@ -301,9 +301,14 @@ export const ClientModal: React.FC<ClientModalProps> = ({
       dbo: usDbo,
       edad: calcAge,
       ingresoFecha: formData.ingresoFecha ? formatToUSDate(formData.ingresoFecha) : todayUS,
-      createdDate: formData.createdDate ? formatToUSDate(formData.createdDate) : todayUS
+      createdDate: formData.createdDate ? formatToUSDate(formData.createdDate) : todayUS,
+      tipoPoliza: formData.tipoPoliza || 'obama',
+      companiaSuplementaria: formData.companiaSuplementaria || '',
+      dependientesList: formData.dependientesList || [],
+      datosDependientes: JSON.stringify(formData.dependientesList || []),
+      estatus: 'Renovado'
     };
-    onRenew(finalClient);
+    onRenew(finalClient, '2027');
   };
 
   return (
@@ -351,9 +356,10 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                 type="button"
                 onClick={handleQuickRenewal}
                 className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-extrabold rounded-xl shadow text-xs transition flex items-center gap-1.5 cursor-pointer"
+                title="Duplicar y Renovar automáticamente para 2027 con estatus 'Renovado'"
               >
                 <RotateCw className="w-4 h-4" />
-                <span>Renovación Rápida Anual (Duplicar a Año Siguiente)</span>
+                <span>🔄 Duplicar y Renovar a 2027 (Estatus: Renovado)</span>
               </button>
             )}
           </div>

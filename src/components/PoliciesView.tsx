@@ -69,6 +69,7 @@ interface PoliciesViewProps {
   isCommissionUnlocked: boolean;
   onOpenPinModal: (target?: string) => void;
   onEditClient: (client: ClientPolicy) => void;
+  onRenewClient?: (client: ClientPolicy) => void;
   onRefreshData: () => void;
   onUpdateStatus?: (clientId: string, newStatus: string) => void;
   onImportClients?: (newClients: ClientPolicy[]) => void;
@@ -85,6 +86,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   isCommissionUnlocked,
   onOpenPinModal,
   onEditClient,
+  onRenewClient,
   onRefreshData,
   onUpdateStatus,
   onImportClients,
@@ -1139,17 +1141,30 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </button>
                       </td>
 
-                      {/* 16. Acción (Editar) */}
+                      {/* 16. Acción (Editar y Renovar) */}
                       <td className="px-2.5 py-1.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => onEditClient(c)}
-                          className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold rounded-md transition border border-emerald-300 flex items-center gap-1 mx-auto cursor-pointer shadow-2xs text-[10px]"
-                          title="Editar todos los datos de esta póliza"
-                        >
-                          <Edit className="w-3 h-3 text-emerald-600" />
-                          <span>Editar</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {onRenewClient && (
+                            <button
+                              type="button"
+                              onClick={() => onRenewClient(c)}
+                              className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold rounded-md transition border border-amber-300 flex items-center gap-1 cursor-pointer shadow-2xs text-[10px]"
+                              title="Duplicar y Renovar automáticamente para 2027 con estatus 'Renovado'"
+                            >
+                              <RotateCw className="w-3 h-3 text-amber-700" />
+                              <span>Renovar 2027</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onEditClient(c)}
+                            className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold rounded-md transition border border-emerald-300 flex items-center gap-1 cursor-pointer shadow-2xs text-[10px]"
+                            title="Editar todos los datos de esta póliza"
+                          >
+                            <Edit className="w-3 h-3 text-emerald-600" />
+                            <span>Editar</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
