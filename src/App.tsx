@@ -598,19 +598,33 @@ export default function App() {
     const clientId = ('id' in clientData && clientData.id) ? clientData.id : ('client-' + Date.now());
     const usDbo = formatToUSDate(clientData.dbo);
     const finalAge = clientData.edad || calculateAgeFromDBO(usDbo);
+    const existingIdx = clients.findIndex(c => c.id === clientId);
+    const isNew = existingIdx < 0;
+
+    // Normalizar lista de dependientes y preservar estatus migratorio
+    const cleanDeps = (clientData.dependientesList || []).map(d => ({
+      ...d,
+      estatusMigratorio: d.estatusMigratorio || clientData.estatusMigratorio || 'Ciudadano'
+    }));
+
     const fullClient: ClientPolicy = {
       ...(clientData as ClientPolicy),
       id: clientId,
       dbo: usDbo,
       edad: finalAge,
-      ingresoFecha: clientData.ingresoFecha ? formatToUSDate(clientData.ingresoFecha) : '',
-      createdDate: clientData.createdDate ? formatToUSDate(clientData.createdDate) : ''
+      estatus: isNew ? (clientData.estatus || 'Nuevo') : (clientData.estatus || 'Activo'),
+      tipoPoliza: clientData.tipoPoliza || 'obama',
+      companiaSuplementaria: clientData.companiaSuplementaria || '',
+      dependientesList: cleanDeps,
+      datosDependientes: JSON.stringify(cleanDeps),
+      numDependientes: cleanDeps.filter(d => d.aplica !== false).length,
+      ingresoFecha: clientData.ingresoFecha ? formatToUSDate(clientData.ingresoFecha) : getCurrentFormattedDateAndYear().dateUS,
+      createdDate: clientData.createdDate ? formatToUSDate(clientData.createdDate) : getCurrentFormattedDateAndYear().dateUS
     };
 
-    const existingIdx = clients.findIndex(c => c.id === clientId);
     let updated: ClientPolicy[];
 
-    if (existingIdx >= 0) {
+    if (!isNew) {
       updated = [...clients];
       updated[existingIdx] = fullClient;
     } else {
@@ -630,7 +644,13 @@ export default function App() {
 
     setIsClientModalOpen(false);
     setEditingClient(null);
-    showToast('Guardado', `Expediente de ${fullClient.nombre} actualizado.`, 'success');
+
+    if (isNew) {
+      showToast('¡Nuevo Registro Guardado!', `Póliza de ${fullClient.nombre} guardada con estatus "${fullClient.estatus}" para administración.`, 'success');
+    } else {
+      showToast('Guardado', `Expediente de ${fullClient.nombre} actualizado correctamente.`, 'success');
+    }
+
     saveSingleClientToSupabase(fullClient);
   };
 

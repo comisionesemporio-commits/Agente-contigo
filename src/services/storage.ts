@@ -17,6 +17,29 @@ export const DEFAULT_STATUSES = [
   "Activo", "Autorizado", "Procesado", "Renovado", "Cotizado", "Nuevo", "Subido / Listo", "Duplicado", "Cancelado", "Robado"
 ];
 
+export const MIGRATORY_STATUS_OPTIONS = [
+  'Ciudadano',
+  'Residente',
+  'Permiso de Trabajo',
+  'Parole Humanitario',
+  'TPS',
+  'Asilo / Refugio',
+  'Visa',
+  'En Trámite / Proceso',
+  'DACA / Otro'
+];
+
+export const SUPPLEMENTAL_COMPANIES_RECOMMENDED = [
+  'ManhattanLife',
+  'SureBridge',
+  'UHC Suplementario',
+  'Aflac',
+  'National General',
+  'Ameritas',
+  'Cigna Suplementario',
+  'Colonial Life'
+];
+
 export const DEFAULT_SUPABASE_URL = "https://kyyddkrqmlohviakcxsg.supabase.co";
 export const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5eWRka3JxbWxvaHZpYWtjeHNnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjI2ODgyMzUsImV4cCI6MjAzODI2NDIzNX0...";
 

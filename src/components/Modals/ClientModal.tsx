@@ -7,20 +7,8 @@ import {
 import {
   MONTHS_LIST, formatToUSDate, formatToISODate, formatDateToHumanSpanish,
   calculateAgeFromDBO, getCurrentFormattedDateAndYear, getCarrierColorStyle, getPolicyStatusStyle,
-  parseClientStatuses
+  parseClientStatuses, MIGRATORY_STATUS_OPTIONS, SUPPLEMENTAL_COMPANIES_RECOMMENDED
 } from '../../services/storage';
-
-export const MIGRATORY_STATUS_OPTIONS = [
-  'Ciudadano',
-  'Residente',
-  'Permiso de Trabajo',
-  'Parole Humanitario',
-  'TPS',
-  'Asilo / Refugio',
-  'Visa',
-  'En Trámite / Proceso',
-  'DACA / Otro'
-];
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -129,7 +117,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
         vendedor: 'General',
         agente: 'General',
         createdYear: selectedYear,
-        estatus: 'Activo',
+        estatus: 'Nuevo',
         tipoPoliza: 'obama',
         companiaSuplementaria: '',
         carrier: 'Oscar',
@@ -425,7 +413,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                   Compañías Recomendadas para Planes Suplementarios (clic para seleccionar):
                 </span>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {['ManhattanLife', 'SureBridge', 'UHC Suplementario', 'Aflac', 'National General', 'Ameritas', 'Cigna Suplementario', 'Colonial Life'].map(comp => (
+                  {SUPPLEMENTAL_COMPANIES_RECOMMENDED.map(comp => (
                     <button
                       key={comp}
                       type="button"
