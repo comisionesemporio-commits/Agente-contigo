@@ -14,7 +14,7 @@ export const DEFAULT_CARRIERS = [
 ];
 
 export const DEFAULT_STATUSES = [
-  "Activo", "Autorizado", "En Proceso", "Cotizado", "Nuevo", "Subido / Listo", "Pendiente", "Cancelado", "Robado"
+  "Activo", "Autorizado", "Procesado", "Renovado", "Cotizado", "Nuevo", "Subido / Listo", "Duplicado", "Cancelado", "Robado"
 ];
 
 export const DEFAULT_SUPABASE_URL = "https://kyyddkrqmlohviakcxsg.supabase.co";
@@ -944,33 +944,43 @@ export function getPolicyStatusStyle(rawStatus?: string): PolicyStatusStyle {
     };
   }
 
-  if (lower.includes('pendiente')) {
+  if (lower.includes('duplicad') || lower.includes('pendiente')) {
     return {
-      label: 'Pendiente',
-      badgeClass: 'bg-orange-100 text-orange-800 border-orange-300',
-      dotColor: 'bg-orange-500',
+      label: 'Duplicado',
+      badgeClass: 'bg-orange-100 text-orange-950 border-orange-400 font-black',
+      dotColor: 'bg-orange-600',
       rowBorder: 'border-l-3 border-l-orange-500',
       rowBg: 'bg-orange-50/20 hover:bg-orange-50/50'
+    };
+  }
+
+  if (lower.includes('renovad') || lower.includes('renovacion')) {
+    return {
+      label: 'Renovado',
+      badgeClass: 'bg-teal-100 text-teal-950 border-teal-400 font-black',
+      dotColor: 'bg-teal-600',
+      rowBorder: 'border-l-3 border-l-teal-500',
+      rowBg: 'bg-teal-50/20 hover:bg-teal-50/50'
     };
   }
 
   if (lower.includes('subido') || lower.includes('listo')) {
     return {
       label: 'Subido / Listo',
-      badgeClass: 'bg-teal-100 text-teal-800 border-teal-300',
-      dotColor: 'bg-teal-500',
-      rowBorder: 'border-l-3 border-l-teal-500',
+      badgeClass: 'bg-emerald-100 text-emerald-950 border-emerald-300 font-bold',
+      dotColor: 'bg-emerald-600',
+      rowBorder: 'border-l-3 border-l-emerald-500',
       rowBg: 'hover:bg-slate-50/80'
     };
   }
 
-  if (lower.includes('proceso') || lower.includes('tramite')) {
+  if (lower.includes('procesad') || lower.includes('proceso') || lower.includes('tramite')) {
     return {
-      label: 'En Proceso',
-      badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-      dotColor: 'bg-indigo-500',
+      label: 'Procesado',
+      badgeClass: 'bg-indigo-100 text-indigo-950 border-indigo-400 font-black',
+      dotColor: 'bg-indigo-600',
       rowBorder: 'border-l-3 border-l-indigo-500',
-      rowBg: 'hover:bg-slate-50/80'
+      rowBg: 'bg-indigo-50/20 hover:bg-indigo-50/50'
     };
   }
 
@@ -1049,8 +1059,30 @@ export function sanitizeClients(clients: ClientPolicy[]): ClientPolicy[] {
       estatus = 'Robado';
     } else if (lower === 'cotizada' || lower === 'cotizadas' || lower === 'cotizados') {
       estatus = 'Cotizado';
+    } else if (lower === 'en proceso' || lower === 'proceso' || lower.includes('en proceso')) {
+      estatus = 'Procesado';
+    } else if (lower === 'pendiente') {
+      estatus = 'Duplicado';
+    } else if (lower === 'renovada' || lower === 'renovadas' || lower === 'renovados') {
+      estatus = 'Renovado';
     } else if (!estatus || estatus === 'undefined' || estatus === 'null') {
       estatus = 'Activo';
+    }
+
+    // Determinar tipo de póliza (obama vs suplementario)
+    let tipoPoliza = client.tipoPoliza;
+    if (!tipoPoliza) {
+      const cLower = String(client.carrier || '').toLowerCase();
+      const pLower = String(client.nombrePlan || '').toLowerCase();
+      if (
+        cLower.includes('manhattan') || cLower.includes('surebridge') ||
+        cLower.includes('dental') || cLower.includes('vision') ||
+        pLower.includes('suplement') || pLower.includes('dental') || pLower.includes('vision') || pLower.includes('indemn')
+      ) {
+        tipoPoliza = 'suplementario';
+      } else {
+        tipoPoliza = 'obama';
+      }
     }
 
     // Poblar dependientesList si datosDependientes tiene JSON
@@ -1067,6 +1099,8 @@ export function sanitizeClients(clients: ClientPolicy[]): ClientPolicy[] {
     return {
       ...client,
       estatus,
+      tipoPoliza,
+      companiaSuplementaria: client.companiaSuplementaria || '',
       estatusMigratorio: estatusMigratorio || 'Ciudadano',
       dependientesList
     };

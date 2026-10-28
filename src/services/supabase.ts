@@ -124,6 +124,9 @@ export function mapClientToSupabaseRow(client: ClientPolicy) {
     pagoRealizado: client.pagoRealizado || 'TRUE',
     docStatus: client.docStatus || 'Documento Completos',
     estatusMigratorio: client.estatusMigratorio || 'Ciudadano',
+    tipoPoliza: client.tipoPoliza || 'obama',
+    companiaSuplementaria: client.companiaSuplementaria || '',
+    dependientesList: client.dependientesList || [],
     agente: client.agente || client.vendedor || 'General'
   };
 
@@ -211,7 +214,10 @@ export function mapSupabaseRowToClient(row: any, defaultYear = "2026"): ClientPo
     bancoRouting: extraData.bancoRouting || row.bancoRouting || '',
     bancoCuenta: extraData.bancoCuenta || row.bancoCuenta || '',
     cuestionarioSalud: extraData.cuestionarioSalud || {},
-    commissions: extraData.commissions || {}
+    commissions: extraData.commissions || {},
+    tipoPoliza: extraData.tipoPoliza || row.tipo_poliza || 'obama',
+    companiaSuplementaria: extraData.companiaSuplementaria || '',
+    dependientesList: Array.isArray(extraData.dependientesList) ? extraData.dependientesList : undefined
   };
 }
 

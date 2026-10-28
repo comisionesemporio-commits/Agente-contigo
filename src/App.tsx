@@ -84,13 +84,25 @@ export default function App() {
     try {
       const stored = localStorage.getItem('polizas_custom_statuses');
       if (stored) {
-        const parsed = JSON.parse(stored);
+        let parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          if (!parsed.some((s: string) => s.toLowerCase() === 'autorizado')) {
-            parsed.splice(1, 0, 'Autorizado');
-            localStorage.setItem('polizas_custom_statuses', JSON.stringify(parsed));
-          }
-          return parsed;
+          // Migrar 'En Proceso' a 'Procesado' y 'Pendiente' a 'Duplicado'
+          parsed = parsed.map((s: string) => {
+            const low = s.toLowerCase();
+            if (low === 'en proceso' || low === 'proceso') return 'Procesado';
+            if (low === 'pendiente') return 'Duplicado';
+            return s;
+          });
+          // Asegurar que estén Autorizado, Procesado, Renovado y Duplicado
+          if (!parsed.some((s: string) => s.toLowerCase() === 'autorizado')) parsed.splice(1, 0, 'Autorizado');
+          if (!parsed.some((s: string) => s.toLowerCase() === 'procesado')) parsed.splice(2, 0, 'Procesado');
+          if (!parsed.some((s: string) => s.toLowerCase() === 'renovado')) parsed.splice(3, 0, 'Renovado');
+          if (!parsed.some((s: string) => s.toLowerCase() === 'duplicado')) parsed.push('Duplicado');
+          // Eliminar cualquier 'En Proceso' o 'Pendiente' restante
+          parsed = parsed.filter((s: string) => s.toLowerCase() !== 'en proceso' && s.toLowerCase() !== 'pendiente');
+          const unique = Array.from(new Set(parsed)) as string[];
+          localStorage.setItem('polizas_custom_statuses', JSON.stringify(unique));
+          return unique;
         }
       }
     } catch (e) {}

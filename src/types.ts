@@ -26,6 +26,7 @@ export interface DependentItem {
   ssn: string; // Social Security Number
   aplica: boolean; // true = Aplica (Activo), false = No Aplica
   parentesco?: string;
+  estatusMigratorio?: string; // Ciudadano, Residente, Permiso de Trabajo, etc.
 }
 
 export interface ClientPolicy {
@@ -35,6 +36,8 @@ export interface ClientPolicy {
   numPoliza: string;
   nombre: string;
   estatus: string;
+  tipoPoliza?: 'obama' | 'suplementario'; // 'obama' (Obamacare / ACA) | 'suplementario' (Suplementario / Indemnidad / Dental / Visión)
+  companiaSuplementaria?: string; // Compañía asociada para pólizas suplementarias
   carrier: string;
   nombrePlan: string;
   peso: string;

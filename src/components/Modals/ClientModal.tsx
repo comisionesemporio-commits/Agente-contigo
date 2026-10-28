@@ -2,13 +2,25 @@ import React, { useState, useEffect } from 'react';
 import { ClientPolicy, HealthQuestions, Agent, DependentItem } from '../../types';
 import {
   X, UserPen, RotateCw, Trash2, Save,
-  Building, Phone, MapPin, HeartPulse, User, Calendar, Users, Plus, Shield, Tag, Check
+  Building, Phone, MapPin, HeartPulse, User, Calendar, Users, Plus, Shield, Tag, Check, AlertTriangle
 } from 'lucide-react';
 import {
   MONTHS_LIST, formatToUSDate, formatToISODate, formatDateToHumanSpanish,
   calculateAgeFromDBO, getCurrentFormattedDateAndYear, getCarrierColorStyle, getPolicyStatusStyle,
   parseClientStatuses
 } from '../../services/storage';
+
+export const MIGRATORY_STATUS_OPTIONS = [
+  'Ciudadano',
+  'Residente',
+  'Permiso de Trabajo',
+  'Parole Humanitario',
+  'TPS',
+  'Asilo / Refugio',
+  'Visa',
+  'En Trámite / Proceso',
+  'DACA / Otro'
+];
 
 interface ClientModalProps {
   isOpen: boolean;
@@ -39,6 +51,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<Partial<ClientPolicy>>({});
   const [customStatusTag, setCustomStatusTag] = useState('');
+  const [showSaveConfirmModal, setShowSaveConfirmModal] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [pendingClientData, setPendingClientData] = useState<ClientPolicy | null>(null);
 
   const toggleModalStatus = (statusToToggle: string) => {
     const current = parseClientStatuses(formData.estatus);
@@ -86,6 +101,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             nombre: `Dependiente ${i + 1}`,
             dbo: '',
             ssn: '',
+            estatusMigratorio: client.estatusMigratorio || 'Ciudadano',
             aplica: true,
             parentesco: 'Dependiente'
           });
@@ -98,6 +114,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
         ...client,
         dbo: usDbo,
         edad: calculatedAge,
+        tipoPoliza: client.tipoPoliza || 'obama',
+        companiaSuplementaria: client.companiaSuplementaria || '',
         dependientesList: deps,
         numDependientes: activeDepsCount,
         agente: client.agente || client.vendedor || 'General'
@@ -112,6 +130,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
         agente: 'General',
         createdYear: selectedYear,
         estatus: 'Activo',
+        tipoPoliza: 'obama',
+        companiaSuplementaria: '',
         carrier: 'Oscar',
         nombrePlan: '',
         peso: '',
@@ -177,6 +197,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
       nombre: '',
       dbo: '',
       ssn: '',
+      estatusMigratorio: formData.estatusMigratorio || 'Ciudadano',
       aplica: true,
       parentesco: 'Dependiente'
     };
@@ -220,20 +241,21 @@ export const ClientModal: React.FC<ClientModalProps> = ({
   const activeDepsCount = (formData.dependientesList || []).filter(d => d.aplica !== false).length;
   const liveTotalMembers = (isTitularActive ? 1 : 0) + activeDepsCount;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.nombre?.trim()) return;
+  const prepareClientForSave = (): ClientPolicy | null => {
+    if (!formData.nombre?.trim()) return null;
 
     const usDbo = formatToUSDate(formData.dbo);
     const calcAge = formData.edad || calculateAgeFromDBO(usDbo);
     const todayUS = getCurrentFormattedDateAndYear().dateUS;
     const activeDeps = (formData.dependientesList || []).filter(d => d.aplica !== false).length;
 
-    const finalClient: ClientPolicy = {
+    return {
       ...(formData as ClientPolicy),
       id: formData.id || ('client-' + Date.now()),
       dbo: usDbo,
       edad: calcAge,
+      tipoPoliza: formData.tipoPoliza || 'obama',
+      companiaSuplementaria: formData.companiaSuplementaria || '',
       numDependientes: activeDeps,
       datosDependientes: JSON.stringify(formData.dependientesList || []),
       dependientesList: formData.dependientesList || [],
@@ -241,7 +263,30 @@ export const ClientModal: React.FC<ClientModalProps> = ({
       createdDate: formData.createdDate ? formatToUSDate(formData.createdDate) : todayUS,
       createdYear: formData.createdYear || selectedYear
     };
-    onSave(finalClient);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const finalClient = prepareClientForSave();
+    if (!finalClient) return;
+    setPendingClientData(finalClient);
+    setShowSaveConfirmModal(true);
+  };
+
+  const handleConfirmSave = () => {
+    if (pendingClientData) {
+      onSave(pendingClientData);
+      setShowSaveConfirmModal(false);
+      setPendingClientData(null);
+    }
+  };
+
+  const handleCloseAttempt = () => {
+    if (formData.nombre?.trim()) {
+      setShowExitConfirmModal(true);
+    } else {
+      onClose();
+    }
   };
 
   const handleQuickRenewal = () => {
@@ -272,8 +317,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({
           </h3>
           <button
             type="button"
-            onClick={onClose}
-            className="text-slate-400 hover:text-white transition"
+            onClick={handleCloseAttempt}
+            className="text-slate-400 hover:text-white transition cursor-pointer p-1 rounded-lg hover:bg-slate-800"
+            title="Cerrar ventana"
           >
             <X className="w-5 h-5" />
           </button>
@@ -312,6 +358,89 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             )}
           </div>
 
+          {/* Selector Tipo de Póliza: Plan Obama vs Plan Suplementario */}
+          <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-purple-50/90 border-2 border-indigo-200 rounded-2xl space-y-2.5 shadow-2xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="font-black text-indigo-950 uppercase text-[11px] flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-indigo-600" />
+                <span>Tipo de Póliza / Cobertura Médica</span>
+              </label>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                formData.tipoPoliza === 'suplementario'
+                  ? 'bg-purple-100 text-purple-900 border-purple-300'
+                  : 'bg-blue-100 text-blue-900 border-blue-300'
+              }`}>
+                {formData.tipoPoliza === 'suplementario' ? '➕ Plan Suplementario' : '🇺🇸 Plan Obama (ACA)'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleChange('tipoPoliza', 'obama')}
+                className={`p-3 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                  (formData.tipoPoliza !== 'suplementario')
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300'
+                    : 'bg-white hover:bg-blue-50 text-slate-700 border-slate-300'
+                }`}
+              >
+                <span className="text-2xl shrink-0">🇺🇸</span>
+                <div className="min-w-0">
+                  <div className="font-black text-xs">Plan Obama (ACA)</div>
+                  <div className={`text-[10px] ${formData.tipoPoliza !== 'suplementario' ? 'text-blue-100' : 'text-slate-500'}`}>
+                    Seguro de Salud Oficial con Subsidio del Mercado
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleChange('tipoPoliza', 'suplementario')}
+                className={`p-3 rounded-xl border text-left transition flex items-center gap-3 cursor-pointer ${
+                  (formData.tipoPoliza === 'suplementario')
+                    ? 'bg-purple-600 text-white border-purple-700 shadow-md ring-2 ring-purple-300'
+                    : 'bg-white hover:bg-purple-50 text-slate-700 border-slate-300'
+                }`}
+              >
+                <span className="text-2xl shrink-0">➕</span>
+                <div className="min-w-0">
+                  <div className="font-black text-xs">Plan Suplementario</div>
+                  <div className={`text-[10px] ${formData.tipoPoliza === 'suplementario' ? 'text-purple-100' : 'text-slate-500'}`}>
+                    Dental, Visión, Indemnización Hospitalaria, Vida
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* Sugerencias de Compañías Suplementarias */}
+            {formData.tipoPoliza === 'suplementario' && (
+              <div className="pt-2 border-t border-purple-200/80 space-y-1.5">
+                <span className="font-black text-purple-950 text-[10px] block uppercase">
+                  Compañías Recomendadas para Planes Suplementarios (clic para seleccionar):
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {['ManhattanLife', 'SureBridge', 'UHC Suplementario', 'Aflac', 'National General', 'Ameritas', 'Cigna Suplementario', 'Colonial Life'].map(comp => (
+                    <button
+                      key={comp}
+                      type="button"
+                      onClick={() => {
+                        handleChange('carrier', comp);
+                        handleChange('companiaSuplementaria', comp);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition cursor-pointer ${
+                        formData.carrier === comp
+                          ? 'bg-purple-700 text-white border-purple-800 shadow-2xs'
+                          : 'bg-white hover:bg-purple-100 text-purple-900 border-purple-300'
+                      }`}
+                    >
+                      🛡️ {comp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Policy Data */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-4">
             <h4 className="font-bold text-slate-800 uppercase text-[11px] flex items-center text-emerald-700">
@@ -347,13 +476,11 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                 <select
                   value={formData.estatusMigratorio || 'Ciudadano'}
                   onChange={e => handleChange('estatusMigratorio', e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold bg-white"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold bg-white cursor-pointer"
                 >
-                  <option value="Ciudadano">Ciudadano</option>
-                  <option value="Residente">Residente</option>
-                  <option value="Permiso de Trabajo">Permiso de Trabajo</option>
-                  <option value="En Proceso">En Proceso</option>
-                  <option value="DACA / Otro">DACA / Otro</option>
+                  {MIGRATORY_STATUS_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -521,7 +648,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
             {(!formData.dependientesList || formData.dependientesList.length === 0) ? (
               <div className="p-4 bg-white/80 border border-dashed border-purple-300 rounded-xl text-center text-xs text-purple-800 font-medium">
-                No hay dependientes registrados en este expediente. Pulsa el botón <strong>"+ Agregar Dependiente"</strong> para añadir los miembros de la familia.
+                No hay dependientes registrados en este expediente. Pulsa el botón <strong>"+ Agregar Dependiente"</strong> para añadir los miembros de la familia con su estatus migratorio.
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -545,7 +672,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 text-xs">
                       {/* Nombre */}
                       <div>
                         <label className="block text-[10px] font-bold text-slate-700 uppercase mb-0.5">Nombre y Apellido</label>
@@ -581,6 +708,20 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                           placeholder="000-00-0000"
                           className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:ring-1 focus:ring-purple-500"
                         />
+                      </div>
+
+                      {/* Estatus Migratorio para Dependiente */}
+                      <div>
+                        <label className="block text-[10px] font-bold text-indigo-900 uppercase mb-0.5">Estatus Migratorio</label>
+                        <select
+                          value={dep.estatusMigratorio || formData.estatusMigratorio || 'Ciudadano'}
+                          onChange={e => updateDependent(idx, 'estatusMigratorio', e.target.value)}
+                          className="w-full border border-indigo-200 rounded-lg px-2 py-1.5 text-xs font-bold text-indigo-950 bg-indigo-50/50 cursor-pointer focus:ring-1 focus:ring-indigo-500"
+                        >
+                          {MIGRATORY_STATUS_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
                       </div>
 
                       {/* Aplica o No Aplica */}
@@ -861,7 +1002,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
 
               {/* Botones de selección rápida de estatus */}
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {['Activo', 'Autorizado', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
+                {['Activo', 'Autorizado', 'Procesado', 'Renovado', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Duplicado', 'Cancelado', 'Robado'].map(opt => {
                   const isChecked = parseClientStatuses(formData.estatus).some(s => s.toLowerCase() === opt.toLowerCase());
                   const optStyle = getPolicyStatusStyle(opt);
                   return (
@@ -989,7 +1130,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             <div className="flex space-x-2 ml-auto">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleCloseAttempt}
                 className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
                 Cancelar
@@ -1004,6 +1145,146 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             </div>
           </div>
         </form>
+
+        {/* Pop-up de Confirmación y Recordatorio Previo a Guardar Expediente */}
+        {showSaveConfirmModal && pendingClientData && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border-2 border-amber-300 p-6 space-y-4 animate-in fade-in zoom-in duration-150">
+              <div className="flex items-start gap-3">
+                <div className="p-3 bg-amber-100 text-amber-700 rounded-xl shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-slate-900">
+                    ¿Deseas guardar este expediente?
+                  </h3>
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    Por favor, revisa el estatus y tipo de cobertura antes de guardar a{' '}
+                    <strong className="text-slate-900">{pendingClientData.nombre}</strong>:
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-950">Estatus asignado actual:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {parseClientStatuses(formData.estatus).map((st, i) => {
+                      const stStyle = getPolicyStatusStyle(st);
+                      return (
+                        <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${stStyle.badgeClass}`}>
+                          {st}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-amber-200/60">
+                  <span className="font-bold text-amber-950">Tipo de Póliza:</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${formData.tipoPoliza === 'suplementario' ? 'bg-purple-100 text-purple-900 border border-purple-300' : 'bg-blue-100 text-blue-900 border border-blue-300'}`}>
+                    {formData.tipoPoliza === 'suplementario' ? '➕ Plan Suplementario' : '🇺🇸 Plan Obama (ACA)'}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-amber-900 font-semibold bg-white p-2.5 rounded-lg border border-amber-200">
+                  ⚠️ <strong>Recordatorio:</strong> Recuerda verificar si debes cambiar el estatus a <strong>Renovado</strong>, <strong>Procesado</strong> o verificar dependientes antes de finalizar.
+                </p>
+
+                {/* Botones de ajuste directo de estatus si desean cambiarlo antes de confirmar */}
+                <div className="space-y-1 pt-1">
+                  <span className="text-[10px] font-black uppercase text-slate-500">¿Cambiar estatus rápido a:?</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Renovado', 'Procesado', 'Activo', 'Duplicado'].map(quickSt => {
+                      const isChecked = parseClientStatuses(formData.estatus).some(s => s.toLowerCase() === quickSt.toLowerCase());
+                      return (
+                        <button
+                          key={quickSt}
+                          type="button"
+                          onClick={() => {
+                            toggleModalStatus(quickSt);
+                            const current = parseClientStatuses(formData.estatus);
+                            const next = current.some(s => s.toLowerCase() === quickSt.toLowerCase())
+                              ? current.filter(s => s.toLowerCase() !== quickSt.toLowerCase())
+                              : [...current, quickSt];
+                            setPendingClientData(prev => prev ? ({ ...prev, estatus: next.join(', ') }) : null);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-black border transition cursor-pointer ${
+                            isChecked ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs' : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                          }`}
+                        >
+                          {isChecked ? '✓ ' : '+ '} {quickSt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSaveConfirmModal(false);
+                    setPendingClientData(null);
+                  }}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  ✏️ Seguir Editando
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSave}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Sí, Guardar Expediente</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pop-up de Confirmación al Intentar Salir de la Pantalla */}
+        {showExitConfirmModal && (
+          <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-2 border-rose-300 p-6 space-y-4 animate-in fade-in zoom-in duration-150">
+              <div className="flex items-start gap-3">
+                <div className="p-3 bg-rose-100 text-rose-700 rounded-xl shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-base font-black text-slate-900">
+                    ¿Deseas salir sin guardar?
+                  </h3>
+                  <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    ¿Ya guardaste este cliente? Recuerda revisar el estatus y guardar el expediente para no perder ningún cambio o información agregada.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowExitConfirmModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-black transition cursor-pointer"
+                >
+                  Permanecer Aquí
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowExitConfirmModal(false);
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black shadow transition cursor-pointer"
+                >
+                  Salir sin Guardar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -93,6 +93,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
+  const [filterPlanType, setFilterPlanType] = useState<'all' | 'obama' | 'suplementario'>('all');
   const [filterSeller, setFilterSeller] = useState<string[]>([]);
   const [filterAgent, setFilterAgent] = useState<string[]>([]);
   const [filterState, setFilterState] = useState('');
@@ -136,17 +137,17 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     setCustomStatusText('');
   };
 
-  // Helper para detectar con certeza total si un cliente está en proceso (por estatus de póliza, migratorio o documental)
-  const isClientProceso = (c: ClientPolicy) => {
+  // Helper para detectar con certeza total si un cliente está procesado (por estatus de póliza, migratorio o documental)
+  const isClientProcesado = (c: ClientPolicy) => {
     const st = String(c.estatus || '').trim().toLowerCase();
     const mig = String(c.estatusMigratorio || '').trim().toLowerCase();
     const doc = String(c.docStatus || '').trim().toLowerCase();
     const notas = String(c.notas || '').trim().toLowerCase();
     return (
-      st.includes('proceso') || st.includes('proces') || st === 'en_progreso' || st.includes('tramit') ||
+      st.includes('procesad') || st.includes('proceso') || st.includes('proces') || st === 'en_progreso' || st.includes('tramit') ||
       mig.includes('proceso') || mig.includes('proces') ||
       doc.includes('proceso') || doc.includes('proces') ||
-      (notas.includes('estatus proceso') || notas.includes('en proceso'))
+      (notas.includes('estatus proceso') || notas.includes('procesado') || notas.includes('en proceso'))
     );
   };
 
@@ -156,9 +157,18 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     return clients.filter(c => String(c.createdYear || "2026") === String(selectedYear));
   }, [clients, selectedYear, includeAllYears]);
 
-  // Conteo total de expedientes en proceso en la lista activa
-  const totalProcesoCount = useMemo(() => {
-    return yearClients.filter(isClientProceso).length;
+  // Conteo total de expedientes procesados en la lista activa
+  const totalProcesadoCount = useMemo(() => {
+    return yearClients.filter(isClientProcesado).length;
+  }, [yearClients]);
+
+  // Contadores exactos de Planes Obama y Planes Suplementarios
+  const obamaCount = useMemo(() => {
+    return yearClients.filter(c => c.tipoPoliza !== 'suplementario').length;
+  }, [yearClients]);
+
+  const suplementarioCount = useMemo(() => {
+    return yearClients.filter(c => c.tipoPoliza === 'suplementario').length;
   }, [yearClients]);
 
   // Dynamic available agents list
@@ -203,9 +213,16 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
         (c.carrier || '').toLowerCase().includes(q) ||
         (c.direccion || '').toLowerCase().includes(q) ||
         (c.notas || '').toLowerCase().includes(q) ||
-        (q === 'proceso' && isClientProceso(c)) ||
-        (q === 'en proceso' && isClientProceso(c));
+        (q === 'procesado' && isClientProcesado(c)) ||
+        (q === 'proceso' && isClientProcesado(c)) ||
+        (q === 'renovado' && String(c.estatus || '').toLowerCase().includes('renovad')) ||
+        (q === 'duplicado' && String(c.estatus || '').toLowerCase().includes('duplicad'));
       if (!match) return false;
+    }
+
+    if (filterPlanType !== 'all') {
+      const clientType = c.tipoPoliza === 'suplementario' ? 'suplementario' : 'obama';
+      if (clientType !== filterPlanType) return false;
     }
 
     if (filterSeller.length > 0 && !filterSeller.includes((c.vendedor || 'General').trim())) {
@@ -233,13 +250,18 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       const matchesAnySelected = filterStatus.some(selected => {
         const sel = selected.trim().toLowerCase();
 
-        // 1. Coincidencia para "En Proceso" o "Proceso"
-        if (sel.includes('proceso') || sel.includes('proces') || sel === 'en proceso' || sel === 'proceso') {
-          if (isClientProceso(c)) return true;
-          return clientStatuses.some(st => st.includes('proceso') || st.includes('proces'));
+        // 1. Coincidencia para "Procesado"
+        if (sel.includes('proces')) {
+          if (isClientProcesado(c)) return true;
+          return clientStatuses.some(st => st.includes('proces'));
         }
 
-        // 2. Coincidencia para "Activos" o "Activo"
+        // 2. Coincidencia para "Renovado"
+        if (sel.includes('renovad')) {
+          return clientStatuses.some(st => st.includes('renovad')) || clientStatusStr.includes('renovad');
+        }
+
+        // 3. Coincidencia para "Activos" o "Activo"
         if (sel === 'activos' || sel === 'activo') {
           return clientStatuses.some(st => st === 'activo' || st === 'activos' || st === 'active');
         }
@@ -249,37 +271,37 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
           return clientStatuses.some(st => st.includes('autoriz')) || clientStatusStr.includes('autoriz');
         }
 
-        // 3. Coincidencia para "Nuevo" o "Nuevo por procesar"
+        // 4. Coincidencia para "Nuevo" o "Nuevo por procesar"
         if (sel === 'nuevo por procesar' || sel === 'nuevo') {
-          return clientStatuses.some(st => st === 'nuevo' || st.includes('subid') || st === 'pendiente') || isClientProceso(c);
+          return clientStatuses.some(st => st === 'nuevo' || st.includes('subid')) || isClientProcesado(c);
         }
 
-        // 4. Coincidencia para "Cancelados"
+        // 5. Coincidencia para "Duplicado" (reemplaza Pendiente)
+        if (sel.includes('duplicad') || sel.includes('pendient')) {
+          return clientStatuses.some(st => st.includes('duplicad') || st.includes('pendient')) || clientStatusStr.includes('duplicad');
+        }
+
+        // 6. Coincidencia para "Cancelados"
         if (sel.includes('cancel')) {
           return clientStatuses.some(st => st.includes('cancel'));
         }
 
-        // 5. Coincidencia para "Robados"
+        // 7. Coincidencia para "Robados"
         if (sel.includes('rob')) {
           return clientStatuses.some(st => st.includes('rob'));
         }
 
-        // 6. Coincidencia para "Cotizado"
+        // 8. Coincidencia para "Cotizado"
         if (sel.includes('cotiz')) {
           return clientStatuses.some(st => st.includes('cotiz'));
         }
 
-        // 7. Coincidencia para "Pendiente"
-        if (sel.includes('pendient')) {
-          return clientStatuses.some(st => st.includes('pendient'));
-        }
-
-        // 8. Coincidencia para "Subido / Listo"
+        // 9. Coincidencia para "Subido / Listo"
         if (sel.includes('subid') || sel.includes('listo')) {
           return clientStatuses.some(st => st.includes('subid') || st.includes('listo'));
         }
 
-        // 9. Coincidencia general flexible
+        // 10. Coincidencia general flexible
         return clientStatuses.some(st => st === sel || st.includes(sel) || sel.includes(st)) ||
                clientStatusStr.includes(sel);
       });
@@ -313,7 +335,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   // Reset to first page when any search or filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterPayment, filterSeller, filterAgent, filterState, filterStatus, filterCarrier, filterMonth, filterBirthMonth, selectedYear]);
+  }, [searchTerm, filterPayment, filterPlanType, filterSeller, filterAgent, filterState, filterStatus, filterCarrier, filterMonth, filterBirthMonth, selectedYear]);
 
   // Pagination calculation
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
@@ -326,6 +348,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   const resetFilters = () => {
     setSearchTerm('');
     setFilterPayment('');
+    setFilterPlanType('all');
     setFilterSeller([]);
     setFilterAgent([]);
     setFilterState('');
@@ -364,11 +387,12 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     const list: Array<{ label: string; dot: string }> = [
       { label: 'Activo', dot: 'bg-emerald-500' },
       { label: 'Autorizado', dot: 'bg-cyan-500' },
-      { label: 'En Proceso', dot: 'bg-indigo-500' },
+      { label: 'Procesado', dot: 'bg-indigo-500' },
+      { label: 'Renovado', dot: 'bg-teal-500' },
       { label: 'Cotizado', dot: 'bg-amber-500' },
       { label: 'Nuevo', dot: 'bg-blue-500' },
-      { label: 'Pendiente', dot: 'bg-orange-500' },
-      { label: 'Subido / Listo', dot: 'bg-teal-500' },
+      { label: 'Subido / Listo', dot: 'bg-sky-500' },
+      { label: 'Duplicado', dot: 'bg-orange-500' },
       { label: 'Cancelado', dot: 'bg-rose-500' },
       { label: 'Robado', dot: 'bg-purple-500' }
     ];
@@ -379,8 +403,8 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       clientStList.forEach(st => {
         const cleanSt = st.trim();
         const lower = cleanSt.toLowerCase();
-        // Ignorar variantes que caen dentro de En Proceso
-        if (lower === 'proceso' || lower === 'en proceso' || lower.includes('tramite')) return;
+        // Ignorar variantes que caen dentro de Procesado o Duplicado
+        if (lower === 'proceso' || lower === 'en proceso' || lower === 'pendiente' || lower.includes('tramite')) return;
         if (cleanSt && !list.some(item => item.label.toLowerCase() === lower)) {
           list.push({ label: cleanSt, dot: 'bg-cyan-500' });
         }
@@ -391,7 +415,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
       customStatuses.forEach(st => {
         const cleanSt = st.trim();
         const lower = cleanSt.toLowerCase();
-        if (lower === 'proceso') return;
+        if (lower === 'proceso' || lower === 'en proceso' || lower === 'pendiente') return;
         if (!list.some(item => item.label.toLowerCase() === lower)) {
           list.push({ label: cleanSt, dot: 'bg-cyan-500' });
         }
@@ -402,8 +426,20 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
 
   const getStatusCount = (label: string) => {
     const lower = label.toLowerCase();
-    if (lower.includes('proceso') || lower === 'en proceso' || lower === 'proceso') {
-      return totalProcesoCount;
+    if (lower.includes('proces')) {
+      return totalProcesadoCount;
+    }
+    if (lower.includes('renovad')) {
+      return yearClients.filter(c => {
+        const statuses = parseClientStatuses(c.estatus).map(s => s.toLowerCase());
+        return statuses.some(st => st.includes('renovad')) || String(c.estatus || '').toLowerCase().includes('renovad');
+      }).length;
+    }
+    if (lower.includes('duplicad') || lower.includes('pendient')) {
+      return yearClients.filter(c => {
+        const statuses = parseClientStatuses(c.estatus).map(s => s.toLowerCase());
+        return statuses.some(st => st.includes('duplicad') || st.includes('pendient'));
+      }).length;
     }
     return yearClients.filter(c => {
       const statuses = parseClientStatuses(c.estatus).map(s => s.toLowerCase());
@@ -413,7 +449,6 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
         if (lower.includes('cancel')) return st.includes('cancel');
         if (lower.includes('rob')) return st.includes('rob');
         if (lower.includes('cotiz')) return st.includes('cotiz');
-        if (lower.includes('pendient')) return st.includes('pendient');
         if (lower === 'nuevo' || lower === 'nuevo por procesar') return st.includes('nuevo');
         if (lower.includes('subid') || lower.includes('listo')) return st.includes('subid') || st.includes('listo');
         return st === lower || st.includes(lower);
@@ -474,6 +509,50 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                 <option value="FALSE">🔴 Pendientes de pago</option>
               </select>
             </div>
+
+            {/* Contador y Filtro: Planes Obama */}
+            <button
+              type="button"
+              onClick={() => setFilterPlanType(prev => prev === 'obama' ? 'all' : 'obama')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-2 border cursor-pointer shadow-2xs ${
+                filterPlanType === 'obama'
+                  ? 'bg-blue-600 text-white border-blue-700 shadow ring-2 ring-blue-300'
+                  : 'bg-blue-50/90 hover:bg-blue-100 text-blue-950 border-blue-200'
+              }`}
+              title="Filtrar por Planes Obama (ACA). Clic para activar/desactivar filtro."
+            >
+              <span className="flex items-center gap-1">
+                <span>🇺🇸</span>
+                <span className="uppercase text-[11px]">Planes Obama:</span>
+              </span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-black font-mono ${
+                filterPlanType === 'obama' ? 'bg-white text-blue-900 shadow-2xs' : 'bg-blue-200 text-blue-950'
+              }`}>
+                {obamaCount}
+              </span>
+            </button>
+
+            {/* Contador y Filtro: Planes Suplementarios */}
+            <button
+              type="button"
+              onClick={() => setFilterPlanType(prev => prev === 'suplementario' ? 'all' : 'suplementario')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-2 border cursor-pointer shadow-2xs ${
+                filterPlanType === 'suplementario'
+                  ? 'bg-purple-600 text-white border-purple-700 shadow ring-2 ring-purple-300'
+                  : 'bg-purple-50/90 hover:bg-purple-100 text-purple-950 border-purple-200'
+              }`}
+              title="Filtrar por Planes Suplementarios. Clic para activar/desactivar filtro."
+            >
+              <span className="flex items-center gap-1">
+                <span>➕</span>
+                <span className="uppercase text-[11px]">Planes Suplementarios:</span>
+              </span>
+              <span className={`px-2 py-0.5 rounded-full text-xs font-black font-mono ${
+                filterPlanType === 'suplementario' ? 'bg-white text-purple-900 shadow-2xs' : 'bg-purple-200 text-purple-950'
+              }`}>
+                {suplementarioCount}
+              </span>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -499,7 +578,19 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
         </div>
 
         {/* Filters Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-9 gap-2 text-xs">
+          {/* Tipo de Cobertura Dropdown */}
+          <div>
+            <select
+              value={filterPlanType}
+              onChange={e => setFilterPlanType(e.target.value as any)}
+              className="w-full py-2 px-3 border border-indigo-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold text-indigo-950 bg-indigo-50/50 cursor-pointer shadow-2xs"
+            >
+              <option value="all">🛡️ Todos los Planes</option>
+              <option value="obama">🇺🇸 Planes Obama ({obamaCount})</option>
+              <option value="suplementario">➕ Planes Suplementarios ({suplementarioCount})</option>
+            </select>
+          </div>
           {/* Search Input */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
@@ -749,9 +840,9 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                     <p className="text-sm font-bold text-slate-600">
                       No se encontraron pólizas coincidentes {includeAllYears ? 'en ningún año' : `para el año ${selectedYear}`} con los filtros actuales.
                     </p>
-                    {clients.some(isClientProceso) && !includeAllYears && (
+                    {clients.some(isClientProcesado) && !includeAllYears && (
                       <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-950 px-4 py-2 rounded-xl text-xs">
-                        <span>💡 Existen expedientes con estatus <strong>"En Proceso"</strong> en otros años.</span>
+                        <span>💡 Existen expedientes con estatus <strong>"Procesado"</strong> en otros años.</span>
                         <button
                           type="button"
                           onClick={() => setIncludeAllYears(true)}
@@ -852,11 +943,11 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                                   </div>
 
                                   <p className="text-[10px] text-slate-500 leading-tight">
-                                    Puedes seleccionar <strong>varios estatus</strong> (ej. <em>Activo</em> y <em>Cotizado</em>):
+                                    Puedes seleccionar <strong>varios estatus</strong> (ej. <em>Activo</em> y <em>Renovado</em>):
                                   </p>
 
-                                   <div className="max-h-48 overflow-y-auto space-y-1 p-0.5">
-                                    {['Activo', 'Autorizado', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].map(opt => {
+                                  <div className="max-h-48 overflow-y-auto space-y-1 p-0.5">
+                                    {['Activo', 'Autorizado', 'Procesado', 'Renovado', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Duplicado', 'Cancelado', 'Robado'].map(opt => {
                                       const isChecked = clientStatuses.some(s => s.toLowerCase() === opt.toLowerCase());
                                       const optStyle = getPolicyStatusStyle(opt);
                                       return (
@@ -882,7 +973,7 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                                     })}
 
                                     {/* Mostrar cualquier otro estatus personalizado que ya tenga este cliente */}
-                                    {clientStatuses.filter(s => !['Activo', 'Autorizado', 'En Proceso', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Pendiente', 'Cancelado', 'Robado'].some(opt => opt.toLowerCase() === s.toLowerCase())).map(customSt => (
+                                    {clientStatuses.filter(s => !['Activo', 'Autorizado', 'Procesado', 'Renovado', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Duplicado', 'Cancelado', 'Robado'].some(opt => opt.toLowerCase() === s.toLowerCase())).map(customSt => (
                                       <label
                                         key={customSt}
                                         className="flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer transition text-[11px] font-black bg-cyan-50 text-cyan-950 ring-1 ring-cyan-200"
@@ -977,11 +1068,26 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </span>
                       </td>
 
-                      {/* 8. Plan */}
+                      {/* 8. Plan y Tipo de Cobertura */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
-                        <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 max-w-[130px] truncate" title={c.nombrePlan}>
-                          📑 {c.nombrePlan || '-'}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <div>
+                            {c.tipoPoliza === 'suplementario' ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-100 text-purple-900 border border-purple-300 inline-flex items-center gap-0.5 shadow-2xs">
+                                <span>➕</span>
+                                <span>Suplementario</span>
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-100 text-blue-900 border border-blue-300 inline-flex items-center gap-0.5 shadow-2xs">
+                                <span>🇺🇸</span>
+                                <span>Obama ACA</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className="bg-indigo-50 text-indigo-900 border border-indigo-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 max-w-[130px] truncate" title={c.nombrePlan || '-'}>
+                            📑 {c.nombrePlan || '-'}
+                          </span>
+                        </div>
                       </td>
 
                       {/* 9. Dirección */}
