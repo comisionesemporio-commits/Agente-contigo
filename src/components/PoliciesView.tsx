@@ -176,6 +176,8 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
   // Dynamic available agents list
   const availableAgents = useMemo(() => {
     const set = new Set<string>();
+    set.add("Luis Fernando");
+    set.add("Nairy Pérez");
     if (agents) {
       agents.forEach(a => {
         const full = `${a.nombre} ${a.apellido || ''}`.trim();
@@ -185,12 +187,6 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
     yearClients.forEach(c => {
       if (c.agente && c.agente.trim()) set.add(c.agente.trim());
     });
-    if (set.size === 0) {
-      set.add("Virginia García");
-      set.add("Junior Pérez");
-      set.add("Carlos Mendoza");
-      set.add("Dani Rodríguez");
-    }
     return Array.from(set).sort();
   }, [agents, yearClients]);
 
@@ -1099,11 +1095,18 @@ export const PoliciesView: React.FC<PoliciesViewProps> = ({
                         </div>
                       </td>
 
-                      {/* 10. Vendedor */}
+                      {/* 10. Vendedor / Agente */}
                       <td className="px-2.5 py-1.5 whitespace-nowrap text-xs">
-                        <span className="font-extrabold text-amber-900 truncate max-w-[110px] inline-block align-middle" title={c.vendedor}>
-                          👤 {formatShortName(c.vendedor || 'General')}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-extrabold text-amber-900 truncate max-w-[120px] inline-block align-middle" title={`Vendedor: ${c.vendedor || 'General'}`}>
+                            👤 {formatShortName(c.vendedor || 'General')}
+                          </span>
+                          {c.agente && c.agente.toLowerCase() !== (c.vendedor || '').toLowerCase() && (
+                            <span className="text-[10px] text-indigo-700 font-bold truncate max-w-[120px] inline-flex items-center gap-0.5" title={`Agente NPN: ${c.agente}`}>
+                              🛡️ {formatShortName(c.agente)}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* 11. Prima ($) */}

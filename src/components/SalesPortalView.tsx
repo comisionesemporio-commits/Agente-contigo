@@ -101,6 +101,8 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
     carrier: string;
     tipoPoliza: string;
     totalMiembros: number;
+    vendedor: string;
+    agente: string;
   } | null>(null);
 
   // Search filter for seller's own registered policies
@@ -170,7 +172,7 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
 
     onSaveNewPolicy({
       vendedor: currentSeller || 'Vendedor General',
-      agente: currentSeller || 'Vendedor General',
+      agente: 'Luis Fernando', // Automático y fijo para el portal del vendedor
       numPoliza: numPoliza.trim(),
       nombre: nombre.trim(),
       estatus: 'Nuevo', // Automáticamente asignado como "Nuevo"
@@ -215,7 +217,9 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
       year: regYear || selectedYear,
       carrier: finalCarrier,
       tipoPoliza: tipoPoliza === 'suplementario' ? 'Plan Suplementario' : 'Plan Obama (ACA)',
-      totalMiembros: 1 + activeDepsCount
+      totalMiembros: 1 + activeDepsCount,
+      vendedor: currentSeller || 'Vendedor General',
+      agente: 'Luis Fernando'
     });
     setShowSuccessModal(true);
 
@@ -317,15 +321,28 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
         </h3>
 
         <form onSubmit={handleSubmit} className="space-y-5 text-xs">
-          {/* Header Row: Vendedor, Año de Registro, Número Póliza */}
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* Header Row: Vendedor, Agente NPN Fijo, Año de Registro, Número Póliza */}
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <label className="block font-black text-amber-900 uppercase mb-1">Vendedor / Agente</label>
+              <label className="block font-black text-amber-900 uppercase mb-1">Vendedor (Tú)</label>
               <input
                 type="text"
                 readOnly
                 value={currentSeller}
                 className="w-full border border-amber-300 rounded-lg px-3 py-2 text-xs font-black bg-amber-100 text-amber-950 cursor-not-allowed"
+              />
+            </div>
+            <div>
+              <label className="block font-black text-indigo-900 uppercase mb-1 flex items-center justify-between">
+                <span>Agente (NPN / Licencia)</span>
+                <span className="text-[9px] text-indigo-800 bg-indigo-100 px-1.5 py-0.5 rounded font-black border border-indigo-200">Oficial Fijo</span>
+              </label>
+              <input
+                type="text"
+                readOnly
+                value="Luis Fernando"
+                className="w-full border border-indigo-300 rounded-lg px-3 py-2 text-xs font-black bg-indigo-50 text-indigo-950 cursor-not-allowed shadow-2xs"
+                title="Agente con licencia asignado automáticamente para emisión de pólizas"
               />
             </div>
             <div>
@@ -1035,6 +1052,14 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
 
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
               <div className="flex justify-between">
+                <span className="text-slate-500 font-semibold">Vendedor (Tú):</span>
+                <span className="font-extrabold text-amber-900">{lastSavedSummary.vendedor}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-semibold">Agente con Licencia (NPN):</span>
+                <span className="font-black text-indigo-900">🛡️ {lastSavedSummary.agente}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-500 font-semibold">Tipo de Póliza:</span>
                 <span className="font-extrabold text-slate-800">{lastSavedSummary.tipoPoliza}</span>
               </div>
@@ -1076,7 +1101,7 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
               <span>Mis Pólizas Registradas</span>
             </h3>
             <span className="text-[11px] text-slate-500 mt-0.5 block">
-              Historial de clientes cargados por <strong>{currentSeller}</strong>
+              Historial de clientes cargados por <strong>{currentSeller}</strong> (Agente Oficial NPN: <strong>Luis Fernando</strong>)
             </span>
           </div>
 
@@ -1102,6 +1127,7 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
                 <th className="px-2.5 py-2">Tipo Póliza</th>
                 <th className="px-2.5 py-2">Nombre y apellido</th>
                 <th className="px-2.5 py-2">Miembros</th>
+                <th className="px-2.5 py-2">Agente NPN</th>
                 <th className="px-2.5 py-2">Fecha nacimiento</th>
                 <th className="px-2.5 py-2">Seguro Social</th>
                 <th className="px-2.5 py-2">Compañía</th>
@@ -1114,7 +1140,7 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
             <tbody className="divide-y divide-slate-200 font-medium text-slate-700">
               {filteredMyPolicies.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="p-6 text-center text-slate-400 font-semibold">
+                  <td colSpan={12} className="p-6 text-center text-slate-400 font-semibold">
                     {searchTableTerm ? 'No se encontraron pólizas con esa búsqueda.' : 'Aún no tienes pólizas registradas.'}
                   </td>
                 </tr>
@@ -1157,6 +1183,13 @@ export const SalesPortalView: React.FC<SalesPortalViewProps> = ({
                       <td className="px-2.5 py-1.5 whitespace-nowrap">
                         <span className="bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 shadow-2xs">
                           👤 {activeMembers} {activeMembers === 1 ? 'miembro' : 'miembros'}
+                        </span>
+                      </td>
+
+                      {/* Agente NPN */}
+                      <td className="px-2.5 py-1.5 whitespace-nowrap text-xs">
+                        <span className="bg-indigo-50 text-indigo-900 border border-indigo-200 px-2 py-0.5 rounded font-black text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                          🛡️ {c.agente || 'Luis Fernando'}
                         </span>
                       </td>
 

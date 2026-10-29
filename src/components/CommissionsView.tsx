@@ -91,6 +91,8 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
   // Dynamic available agents list
   const availableAgents = useMemo(() => {
     const set = new Set<string>();
+    set.add("Luis Fernando");
+    set.add("Nairy Pérez");
     if (agents) {
       agents.forEach(a => {
         const full = `${a.nombre} ${a.apellido || ''}`.trim();
@@ -100,12 +102,6 @@ export const CommissionsView: React.FC<CommissionsViewProps> = ({
     yearClients.forEach(c => {
       if (c.agente && c.agente.trim()) set.add(c.agente.trim());
     });
-    if (set.size === 0) {
-      set.add("Virginia García");
-      set.add("Junior Pérez");
-      set.add("Carlos Mendoza");
-      set.add("Dani Rodríguez");
-    }
     return Array.from(set).sort();
   }, [agents, yearClients]);
 

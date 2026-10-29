@@ -351,6 +351,24 @@ export function calculateAgeFromDBO(dboStr?: string): number {
 
 export const INITIAL_AGENTS: Agent[] = [
   {
+    id: 'ag-luis',
+    nombre: 'Luis Fernando',
+    apellido: '',
+    npn: '20891432',
+    licencias: 'Todas las aseguradoras - Agente Principal NPN',
+    compania: 'Agente Contigo',
+    notas: 'Agente Oficial asignado automáticamente a ventas de vendedores'
+  },
+  {
+    id: 'ag-nairy',
+    nombre: 'Nairy',
+    apellido: 'Pérez',
+    npn: '19827364',
+    licencias: 'GA, FL, TX - Vida & Salud',
+    compania: 'Agente General',
+    notas: 'Agente General Administración'
+  },
+  {
     id: 'ag-1',
     nombre: 'Virginia',
     apellido: 'García',

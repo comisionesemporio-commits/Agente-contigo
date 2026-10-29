@@ -114,8 +114,8 @@ export const ClientModal: React.FC<ClientModalProps> = ({
         id: '',
         nombre: '',
         numPoliza: '',
-        vendedor: 'General',
-        agente: 'General',
+        vendedor: customSellers[0] || 'General',
+        agente: 'Nairy Pérez', // Portal Administrativo: Nairy Pérez / Agente General por defecto
         createdYear: selectedYear,
         estatus: 'Nuevo',
         tipoPoliza: 'obama',
@@ -994,9 +994,9 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                 </div>
               </div>
 
-              {/* Botones de selección rápida de estatus */}
+              {/* Botones de selección rápida de estatus (Dinámicos desde Configuración) */}
               <div className="flex flex-wrap gap-1.5 pt-1">
-                {['Activo', 'Autorizado', 'Procesado', 'Renovado', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Duplicado', 'Cancelado', 'Robado'].map(opt => {
+                {(customStatuses && customStatuses.length > 0 ? customStatuses : ['Activo', 'Autorizado', 'Procesado', 'Renovado', 'Cotizado', 'Nuevo', 'Subido / Listo', 'Duplicado', 'Cancelado', 'Robado']).map(opt => {
                   const isChecked = parseClientStatuses(formData.estatus).some(s => s.toLowerCase() === opt.toLowerCase());
                   const optStyle = getPolicyStatusStyle(opt);
                   return (
@@ -1064,16 +1064,21 @@ export const ClientModal: React.FC<ClientModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-indigo-900 uppercase mb-1">Agente (NPN / Licencia)</label>
+              <label className="block font-bold text-indigo-900 uppercase mb-1 flex items-center justify-between">
+                <span>Agente con Licencia (NPN)</span>
+                <span className="text-[9px] text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded font-bold">Por Defecto: Nairy Pérez</span>
+              </label>
               <input
                 type="text"
                 list="client-modal-agents"
-                value={formData.agente || ''}
+                value={formData.agente || 'Nairy Pérez'}
                 onChange={e => handleChange('agente', e.target.value)}
-                placeholder="Ej. Virginia García"
+                placeholder="Ej. Nairy Pérez / Luis Fernando"
                 className="w-full border border-indigo-200 rounded-lg px-3 py-2 text-xs font-semibold bg-indigo-50/40 text-indigo-950 focus:ring-2 focus:ring-indigo-500"
               />
               <datalist id="client-modal-agents">
+                <option value="Nairy Pérez" />
+                <option value="Luis Fernando" />
                 {agents && agents.map(a => {
                   const full = `${a.nombre} ${a.apellido || ''}`.trim();
                   return <option key={a.id || full} value={full} />;
