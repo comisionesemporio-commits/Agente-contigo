@@ -415,18 +415,28 @@ export async function fetchVendedoresFromSupabase(): Promise<Agent[]> {
       return [];
     }
     if (Array.isArray(data)) {
-      return data.map(row => ({
-        id: String(row.id),
-        nombre: String(row.nombre || '').trim(),
-        apellido: String(row.apellido || '').trim(),
-        clave: row.clave ? String(row.clave).trim() : '',
-        npn: String(row.npn || ''),
-        licencias: String(row.licencias || ''),
-        compania: String(row.compania || 'General'),
-        notas: String(row.notas || ''),
-        email: String(row.email || ''),
-        telefono: String(row.telefono || '')
-      }));
+      const deletedNames = ['dani', 'carlos mendoza', 'oscar', 'maría rivas', 'maria rivas'];
+      return data
+        .filter(row => {
+          if (!row || !row.nombre || !String(row.nombre).trim()) return false;
+          const cleanName = String(row.nombre).trim().toLowerCase();
+          if (deletedNames.includes(cleanName)) return false;
+          if (row.activo === false || row.activo === 'false') return false;
+          if (row.status === 'inactivo' || row.estado === 'inactivo') return false;
+          return true;
+        })
+        .map(row => ({
+          id: String(row.id),
+          nombre: String(row.nombre || '').trim(),
+          apellido: String(row.apellido || '').trim(),
+          clave: row.clave ? String(row.clave).trim() : '',
+          npn: String(row.npn || ''),
+          licencias: String(row.licencias || ''),
+          compania: String(row.compania || 'General'),
+          notas: String(row.notas || ''),
+          email: String(row.email || ''),
+          telefono: String(row.telefono || '')
+        }));
     }
   } catch (err) {
     console.warn('Error fetching vendedores:', err);
@@ -462,12 +472,21 @@ export async function saveVendedorToSupabase(vendedor: Agent): Promise<boolean> 
   }
 }
 
-export async function deleteVendedorFromSupabase(id: string): Promise<boolean> {
+export async function deleteVendedorFromSupabase(idOrName: string): Promise<boolean> {
   const sb = initSupabase();
   if (!sb) return false;
   try {
-    const { error } = await sb.from('vendedores').delete().eq('id', id);
-    return !error;
+    const clean = idOrName.trim();
+    const idVariant = 'ven-' + clean.toLowerCase().replace(/\s+/g, '-');
+    const { error } = await sb
+      .from('vendedores')
+      .delete()
+      .or(`id.eq.${clean},id.eq.${idVariant},nombre.ilike.${clean}`);
+    if (error) {
+      console.warn('Aviso eliminando vendedor de Supabase:', error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
     return false;
   }

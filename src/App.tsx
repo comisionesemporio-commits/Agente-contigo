@@ -69,11 +69,19 @@ export default function App() {
     return localStorage.getItem('app_custom_logo') || null;
   });
 
-  // Catalogs
   const [customSellers, setCustomSellers] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem('polizas_vendedores');
-      if (stored) return JSON.parse(stored);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const deletedNames = ['dani', 'carlos mendoza', 'oscar', 'maría rivas', 'maria rivas'];
+          const cleaned = parsed.filter(
+            s => typeof s === 'string' && s.trim() && !deletedNames.includes(s.trim().toLowerCase())
+          );
+          return cleaned;
+        }
+      }
     } catch (e) {}
     return DEFAULT_SELLERS;
   });
@@ -238,6 +246,48 @@ export default function App() {
     };
   }, []);
 
+  // Sincronización en tiempo real para la tabla de vendedores en Supabase
+  useEffect(() => {
+    const sb = initSupabase();
+    if (!sb) return;
+
+    let vChannel: any = null;
+    try {
+      vChannel = sb
+        .channel('realtime:vendedores_app')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'vendedores' },
+          async () => {
+            try {
+              const cloudVendedores = await fetchVendedoresFromSupabase();
+              const deletedNames = ['dani', 'carlos mendoza', 'oscar', 'maría rivas', 'maria rivas'];
+              const activeNames = cloudVendedores
+                .map(v => v.nombre.trim())
+                .filter(name => name.length > 0 && !deletedNames.includes(name.toLowerCase()));
+              const unique = Array.from(new Set(activeNames));
+              setCustomSellers(unique);
+              localStorage.setItem('polizas_vendedores', JSON.stringify(unique));
+              cloudVendedores.forEach(v => {
+                if (v.clave) setSellerCustomPass(v.nombre, v.clave);
+              });
+            } catch (_) {}
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.info('Aviso Realtime Vendedores:', err);
+    }
+
+    return () => {
+      if (vChannel && sb) {
+        try {
+          sb.removeChannel(vChannel);
+        } catch (_) {}
+      }
+    };
+  }, []);
+
   const syncCalendarFromSupabase = async (notify = false) => {
     const sb = initSupabase();
     if (!sb) return;
@@ -313,16 +363,24 @@ export default function App() {
       // Sincronizar también el calendario en la misma llamada
       await syncCalendarFromSupabase();
 
-      // Sincronizar vendedores y sus claves desde Supabase
+      // Sincronizar vendedores y sus claves desde Supabase (Fuente única y exclusiva de verdad)
       try {
         const cloudVendedores = await fetchVendedoresFromSupabase();
-        if (cloudVendedores.length > 0) {
-          const names = Array.from(new Set([...customSellers, ...cloudVendedores.map(v => v.nombre.trim())]));
-          setCustomSellers(names);
-          localStorage.setItem('polizas_vendedores', JSON.stringify(names));
-          cloudVendedores.forEach(v => {
-            if (v.clave) setSellerCustomPass(v.nombre, v.clave);
-          });
+        if (Array.isArray(cloudVendedores)) {
+          const deletedNames = ['dani', 'carlos mendoza', 'oscar', 'maría rivas', 'maria rivas'];
+          const activeNames = cloudVendedores
+            .map(v => v.nombre.trim())
+            .filter(name => name.length > 0 && !deletedNames.includes(name.toLowerCase()));
+          
+          const unique = Array.from(new Set(activeNames));
+          // Supabase es la fuente de verdad única para vendedores activos:
+          if (unique.length > 0) {
+            setCustomSellers(unique);
+            localStorage.setItem('polizas_vendedores', JSON.stringify(unique));
+            cloudVendedores.forEach(v => {
+              if (v.clave) setSellerCustomPass(v.nombre, v.clave);
+            });
+          }
         }
       } catch (_) {}
 
@@ -925,8 +983,8 @@ export default function App() {
     setCustomSellers(updated);
     localStorage.setItem('polizas_vendedores', JSON.stringify(updated));
     removeSellerCustomPass(s);
-    await deleteVendedorFromSupabase('ven-' + s.toLowerCase().replace(/\s+/g, '-'));
-    showToast('Vendedor Removido', `"${s}" retirado de la lista.`, 'info');
+    await deleteVendedorFromSupabase(s);
+    showToast('Vendedor Removido', `"${s}" retirado de la lista y eliminado en Supabase.`, 'info');
   };
 
   const handleAddCarrier = (c: string) => {
@@ -1113,6 +1171,10 @@ export default function App() {
         onLoginSeller={handleLoginSeller}
         onLoginAdmin={handleLoginAdmin}
         onLogoUpload={handleLogoUpload}
+        onSyncSellers={(activeList) => {
+          setCustomSellers(activeList);
+          localStorage.setItem('polizas_vendedores', JSON.stringify(activeList));
+        }}
       />
     );
   }

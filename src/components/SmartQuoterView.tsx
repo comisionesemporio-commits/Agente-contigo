@@ -676,7 +676,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
                 type="text"
                 value={clientName}
                 onChange={e => setClientName(e.target.value)}
-                placeholder="Ej. Familia Ramírez / Carlos Mendoza"
+                placeholder="Ej. Familia Ramírez / Virginia García"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
               />
             </div>

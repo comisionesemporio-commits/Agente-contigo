@@ -5,9 +5,8 @@ export const MONTHS_LIST = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
 ];
 
-export const DEFAULT_SELLERS = [
-  "Virginia", "Junior", "Dani", "Carlos Mendoza", "Oscar", "María Rivas"
-];
+// Catálogo dinámico de vendedores: se sincroniza exclusivamente con Supabase en tiempo real
+export const DEFAULT_SELLERS: string[] = [];
 
 export const DEFAULT_CARRIERS = [
   "Oscar", "Ambetter", "Aetna", "Florida Blue", "Cigna", "UnitedHealthcare", "Molina"
@@ -385,24 +384,6 @@ export const INITIAL_AGENTS: Agent[] = [
     licencias: 'GA, TX - Salud & Marketplace',
     compania: 'Florida Blue / Aetna',
     notas: 'Agente Senior Salud'
-  },
-  {
-    id: 'ag-3',
-    nombre: 'Carlos',
-    apellido: 'Mendoza',
-    npn: '18273645',
-    licencias: 'GA, NC, SC - Salud',
-    compania: 'Cigna / Oscar',
-    notas: 'Agente Autorizado'
-  },
-  {
-    id: 'ag-4',
-    nombre: 'Dani',
-    apellido: 'Rodríguez',
-    npn: '21029384',
-    licencias: 'GA, FL - Marketplace',
-    compania: 'UnitedHealthcare',
-    notas: 'Agente Asesor Salud'
   }
 ];
 
@@ -500,8 +481,8 @@ export const INITIAL_CLIENTS: ClientPolicy[] = [
   },
   {
     id: "client-3",
-    vendedor: "Carlos Mendoza",
-    agente: "Carlos Mendoza",
+    vendedor: "Virginia",
+    agente: "Luis Fernando",
     numPoliza: "POL-00391",
     nombre: "Adriana Lucía Morales",
     estatus: "Nuevo",
@@ -550,7 +531,7 @@ export const INITIAL_TASKS: DailyTask[] = [
     categoria: 'documentos',
     estado: 'pendiente',
     clienteRelacionado: 'Adriana Lucía Morales',
-    asignadoA: 'Carlos Mendoza',
+    asignadoA: 'Virginia',
     creadaEn: getTodayDateString()
   },
   {
@@ -562,7 +543,7 @@ export const INITIAL_TASKS: DailyTask[] = [
     categoria: 'pago',
     estado: 'en_progreso',
     clienteRelacionado: 'Adriana Lucía Morales',
-    asignadoA: 'Carlos Mendoza',
+    asignadoA: 'Virginia',
     creadaEn: getTodayDateString()
   },
   {
@@ -1189,7 +1170,7 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     tipo: 'zoom',
     clienteRelacionado: 'Adriana Lucía Morales',
     linkReunion: 'https://zoom.us/j/8492019382',
-    asignadoA: 'Carlos Mendoza',
+    asignadoA: 'Virginia',
     completada: false,
     creadaEn: getTodayDateString()
   },
@@ -1203,7 +1184,7 @@ export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [
     tipo: 'llamada',
     clienteRelacionado: 'Adriana Lucía Morales',
     linkReunion: 'tel:(713)441-2098',
-    asignadoA: 'Carlos Mendoza',
+    asignadoA: 'Virginia',
     completada: false,
     creadaEn: getTodayDateString()
   },

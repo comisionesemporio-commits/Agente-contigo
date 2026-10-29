@@ -1053,7 +1053,7 @@ export const ClientModal: React.FC<ClientModalProps> = ({
                 list="client-modal-sellers"
                 value={formData.vendedor || 'General'}
                 onChange={e => handleChange('vendedor', e.target.value)}
-                placeholder="Ej. Carlos Mendoza"
+                placeholder="Ej. Virginia García"
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold bg-white"
               />
               <datalist id="client-modal-sellers">
