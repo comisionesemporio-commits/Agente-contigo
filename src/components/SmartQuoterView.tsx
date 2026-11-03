@@ -207,8 +207,38 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     setAiStatusText('Analizando documentos y capturas con Gemini AI...');
 
     try {
-      // Direct client call to Gemini 1.5 Flash using the official API endpoint
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`;
+      // Helper para llamadas a Gemini v1beta con gemini-2.0-flash y gemini-1.5-flash (sin "models/" en el nombre)
+      const callGeminiGenerateContent = async (key: string, payload: any) => {
+        const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
+        // Usar gemini-2.0-flash (modelo de alta compatibilidad en v1beta) y gemini-1.5-flash
+        const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+        let lastError: Error | null = null;
+
+        for (const model of candidateModels) {
+          try {
+            // El nombre del modelo es exactamente "gemini-2.0-flash" o "gemini-1.5-flash" (sin la palabra "models/")
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+              return await res.json();
+            }
+
+            const errJson = await res.json().catch(() => ({}));
+            const msg = errJson.error?.message || `HTTP ${res.status} con modelo ${model}`;
+            lastError = new Error(msg);
+            console.warn(`Aviso Gemini (${model}):`, msg);
+          } catch (e: any) {
+            lastError = e;
+          }
+        }
+
+        throw lastError || new Error('No se pudo conectar con los modelos de Gemini.');
+      };
 
       const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare, UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar, Cigna, etc.).
 Analiza cuidadosamente las imágenes adjuntas, que son capturas de pantalla de cotizaciones de seguros de salud.
@@ -234,35 +264,34 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
 
       const parts: any[] = [{ text: promptText }];
       uploadedFiles.forEach(f => {
-        parts.push({
-          inlineData: {
-            mimeType: f.mimeType || 'image/jpeg',
-            data: f.base64
-          }
-        });
+        if (f.base64 && f.base64.length > 20) {
+          parts.push({
+            inlineData: {
+              mimeType: f.mimeType || 'image/jpeg',
+              data: f.base64.trim()
+            }
+          });
+        }
       });
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig: {
-            responseMimeType: 'application/json'
-          }
-        })
+      const resData = await callGeminiGenerateContent(keyToUse, {
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: 'application/json'
+        }
       });
 
-      if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        throw new Error(errJson.error?.message || `Error HTTP ${response.status}`);
-      }
-
-      const resData = await response.json();
       const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!rawText) throw new Error('No se recibió texto estructurado de la IA.');
 
-      const parsedPlans = JSON.parse(rawText);
+      let cleanJson = rawText.trim();
+      if (cleanJson.startsWith('```json')) {
+        cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+
+      const parsedPlans = JSON.parse(cleanJson);
 
       if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
         // Optional: web search grounding for benefits
@@ -272,20 +301,13 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
             const p = parsedPlans[i];
             try {
               const searchPrompt = `Busca en internet información oficial y resumida de la póliza de seguro '${p.company} ${p.planName}'. Resume en 1 sola oración sus beneficios más atractivos.`;
-              const searchRes = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  contents: [{ parts: [{ text: searchPrompt }] }],
-                  tools: [{ google_search: {} }]
-                })
+              const searchData = await callGeminiGenerateContent(keyToUse, {
+                contents: [{ parts: [{ text: searchPrompt }] }],
+                tools: [{ google_search: {} }]
               });
-              if (searchRes.ok) {
-                const searchData = await searchRes.json();
-                const benefit = searchData.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (benefit && benefit.length > 15) {
-                  p.extraBenefit = benefit.replace(/[\n\r]+/g, ' ').trim();
-                }
+              const benefit = searchData.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (benefit && benefit.length > 15) {
+                p.extraBenefit = benefit.replace(/[\n\r]+/g, ' ').trim();
               }
             } catch (e) {
               console.warn('Google grounding notice:', e);
@@ -339,20 +361,29 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
     onShowToast('Generando Explicación...', `Redactando beneficios claros para ${plan.company}...`, 'info');
 
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`;
       const prompt = `Actúa como un asesor estrella de seguros de 'Agente Contigo'. Escribe una explicación muy corta (máximo 1 o 2 oraciones, menos de 35 palabras) para ${clientName} sobre el plan '${plan.company} - ${plan.planName}'.
 Datos clave del plan: Prima: $${plan.premium}/mes, Deducible: ${plan.deductible}, Médico Primario: ${plan.primaryCare}, Extra: ${plan.extraBenefit}.
 Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas el beneficio principal sin términos complicados.`;
 
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
+      const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+      let resData: any = null;
+      for (const model of candidateModels) {
+        try {
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+          });
+          if (res.ok) {
+            resData = await res.json();
+            break;
+          }
+        } catch (_) {}
+      }
 
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (resData) {
+        const text = resData.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
           const clean = text.replace(/[\n\r]+/g, ' ').replace(/^["']|["']$/g, '').trim();
           updatePlan(planId, 'clientSummary', clean);
@@ -378,19 +409,28 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     onShowToast('Buscando en Google...', `Buscando folleto de ${plan.company} en internet...`, 'info');
 
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`;
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `Busca en internet los beneficios oficiales de la póliza '${plan.company} ${plan.planName}'. Extrae en una sola oración concisa qué cubre (por ejemplo: pagos por día de hospital, cirugías, deducible de ambulancia, red médica o dinero directo).` }] }],
-          tools: [{ google_search: {} }]
-        })
-      });
+      const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+      let resData: any = null;
+      for (const model of candidateModels) {
+        try {
+          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `Busca en internet los beneficios oficiales de la póliza '${plan.company} ${plan.planName}'. Extrae en una sola oración concisa qué cubre (por ejemplo: pagos por día de hospital, cirugías, deducible de ambulancia, red médica o dinero directo).` }] }],
+              tools: [{ google_search: {} }]
+            })
+          });
+          if (res.ok) {
+            resData = await res.json();
+            break;
+          }
+        } catch (_) {}
+      }
 
-      if (res.ok) {
-        const data = await res.json();
-        const benefit = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (resData) {
+        const benefit = resData.candidates?.[0]?.content?.parts?.[0]?.text;
         if (benefit) {
           const clean = benefit.replace(/[\n\r]+/g, ' ').trim();
           updatePlan(planId, 'extraBenefit', clean);
