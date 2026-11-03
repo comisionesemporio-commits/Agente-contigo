@@ -207,8 +207,8 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     setAiStatusText('Analizando documentos y capturas con Gemini AI...');
 
     try {
-      // Direct client call to Gemini 2.5 Flash using the official API endpoint
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToUse}`;
+      // Direct client call to Gemini 1.5 Flash using the official API endpoint
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`;
 
       const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare, UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar, Cigna, etc.).
 Analiza cuidadosamente las imágenes adjuntas, que son capturas de pantalla de cotizaciones de seguros de salud.
@@ -339,7 +339,7 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
     onShowToast('Generando Explicación...', `Redactando beneficios claros para ${plan.company}...`, 'info');
 
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${keyToUse}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`;
       const prompt = `Actúa como un asesor estrella de seguros de 'Agente Contigo'. Escribe una explicación muy corta (máximo 1 o 2 oraciones, menos de 35 palabras) para ${clientName} sobre el plan '${plan.company} - ${plan.planName}'.
 Datos clave del plan: Prima: $${plan.premium}/mes, Deducible: ${plan.deductible}, Médico Primario: ${plan.primaryCare}, Extra: ${plan.extraBenefit}.
 Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas el beneficio principal sin términos complicados.`;
@@ -378,7 +378,7 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     onShowToast('Buscando en Google...', `Buscando folleto de ${plan.company} en internet...`, 'info');
 
     try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToUse}`;
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${keyToUse}`;
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
