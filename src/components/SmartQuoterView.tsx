@@ -12,13 +12,60 @@ import {
 } from '../services/storage';
 import { initSupabase } from '../services/supabase';
 
-// Modelo oficial activo de Google Gemini Flash compatible con generateContent en v1beta
+// Modelos oficiales activos de Google Gemini Flash compatibles con generateContent en v1beta
 const OFFICIAL_GEMINI_MODEL = 'gemini-flash-latest';
 const SUPPORTED_GEMINI_MODELS = [
   'gemini-flash-latest',
   'gemini-3.8-flash',
   'gemini-3.1-flash-lite'
 ];
+
+const sleepMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isRetryableGeminiError = (err: any): boolean => {
+  const msg = String(err?.message || err || '').toLowerCase();
+  if (msg.includes('api_key_invalid') || msg.includes('api key not valid')) {
+    return false;
+  }
+  return (
+    msg.includes('503') ||
+    msg.includes('unavailable') ||
+    msg.includes('high demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('500') ||
+    msg.includes('internal') ||
+    msg.includes('429') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('404') ||
+    msg.includes('not found') ||
+    msg.includes('not supported for generatecontent') ||
+    msg.includes('fetch') ||
+    msg.includes('network')
+  );
+};
+
+const formatFriendlyGeminiError = (err: any): string => {
+  const raw = String(err?.message || err || 'Error desconocido');
+  const lower = raw.toLowerCase();
+  if (lower.includes('api_key_invalid') || lower.includes('api key not valid')) {
+    return 'Tu API Key de Gemini no es válida. Verifica la clave en "IA Conectada".';
+  }
+  if (lower.includes('503') || lower.includes('high demand') || lower.includes('unavailable')) {
+    return 'Los servidores de Google Gemini están saturados temporalmente (alta demanda). Intenta nuevamente en unos segundos.';
+  }
+  if (lower.includes('429') || lower.includes('quota') || lower.includes('resource_exhausted')) {
+    return 'Se alcanzó el límite temporal de solicitudes de tu clave Gemini. Espera un minuto e intenta de nuevo.';
+  }
+  if (lower.includes('404') || lower.includes('not found')) {
+    return 'No se encontró un modelo compatible disponible para esta clave de Gemini.';
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed?.error?.message) return parsed.error.message;
+  } catch (_) {}
+  return raw;
+};
 
 interface SmartQuoterViewProps {
   currentSeller: string;
@@ -216,11 +263,11 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     setAiStatusText('Analizando documentos y capturas con Gemini Flash...');
 
     try {
-      // Ejecutor inteligente con @google/genai y descubrimiento dinámico vía ListModels si un alias devuelve 404
+      // Ejecutor inteligente con @google/genai, respaldo multi-modelo ante saturación (503) y ListModels
       const generateWithActiveGemini = async (
         key: string,
         contentsPayload: any,
-        options?: { responseMimeType?: string; tools?: any[] }
+        options?: { responseMimeType?: string; tools?: any[]; onStatus?: (msg: string) => void }
       ): Promise<string> => {
         const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
         const ai = new GoogleGenAI({ apiKey: cleanKey });
@@ -247,30 +294,13 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
           return resText;
         };
 
-        let lastError: any = null;
-        for (const modelName of SUPPORTED_GEMINI_MODELS) {
+        // Descubrir todos los modelos compatibles disponibles en la cuenta
+        const discoverAllModels = async (): Promise<string[]> => {
           try {
-            return await runWithModel(modelName);
-          } catch (err: any) {
-            lastError = err;
-            const errMsg = String(err?.message || err || '');
-            const isModelNotFound =
-              errMsg.includes('404') ||
-              errMsg.includes('not found') ||
-              errMsg.includes('not supported for generateContent');
-            if (!isModelNotFound) {
-              throw err;
-            }
-            console.warn(`[Gemini] Modelo ${modelName} no disponible para esta clave, probando siguiente...`);
-          }
-        }
-
-        // Si ningún alias estándar respondió, consultar ModelService.ListModels directamente en v1beta
-        try {
-          const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
-          if (listRes.ok) {
+            const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+            if (!listRes.ok) return [];
             const listData = await listRes.json();
-            const availableModels: string[] = (listData.models || [])
+            return (listData.models || [])
               .filter((m: any) =>
                 Array.isArray(m.supportedGenerationMethods) &&
                 m.supportedGenerationMethods.includes('generateContent') &&
@@ -281,7 +311,8 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
                 !m.name.includes('live') &&
                 !m.name.includes('transcribe') &&
                 !m.name.includes('embedding') &&
-                !m.name.includes('vision')
+                !m.name.includes('vision') &&
+                !m.name.includes('robotics')
               )
               .map((m: any) => m.name.replace(/^models\//, ''))
               .sort((a: string, b: string) => {
@@ -290,25 +321,44 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
                 if (aFlash !== bFlash) return aFlash - bFlash;
                 return b.localeCompare(a);
               });
+          } catch (_) {
+            return [];
+          }
+        };
 
-            for (const discoveredModel of availableModels) {
-              if (SUPPORTED_GEMINI_MODELS.includes(discoveredModel)) continue;
-              try {
-                return await runWithModel(discoveredModel);
-              } catch (err: any) {
-                lastError = err;
-                const errMsg = String(err?.message || err || '');
-                if (!errMsg.includes('404') && !errMsg.includes('not found')) {
-                  throw err;
-                }
+        const discovered = await discoverAllModels();
+        const candidatePool = Array.from(new Set([...SUPPORTED_GEMINI_MODELS, ...discovered]));
+
+        let lastError: any = null;
+        // Hasta 2 rondas completas si hay saturación temporal 503
+        for (let round = 0; round < 2; round++) {
+          if (round === 1) {
+            options?.onStatus?.('⏳ Servidores de Gemini con alta demanda, reintentando con modelos alternativos...');
+            await sleepMs(1500);
+          }
+
+          for (let i = 0; i < candidatePool.length; i++) {
+            const modelName = candidatePool[i];
+            try {
+              if (i > 0) {
+                options?.onStatus?.(`🔄 Probando modelo alternativo (${modelName})...`);
+              }
+              return await runWithModel(modelName);
+            } catch (err: any) {
+              lastError = err;
+              if (!isRetryableGeminiError(err)) {
+                throw err;
+              }
+              const errMsg = String(err?.message || err || '');
+              console.warn(`[Gemini] ${modelName} falló temporalmente (${errMsg.slice(0, 120)}), cambiando al siguiente...`);
+              if (errMsg.includes('503') || errMsg.toLowerCase().includes('high demand')) {
+                await sleepMs(450);
               }
             }
           }
-        } catch (listErr) {
-          console.warn('Error consultando ListModels:', listErr);
         }
 
-        throw lastError || new Error('No se encontró un modelo de Gemini compatible con generateContent.');
+        throw lastError || new Error('No se encontró un modelo de Gemini disponible en este momento.');
       };
 
       const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare, UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar, Cigna, etc.).
@@ -348,7 +398,10 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
       const rawText = await generateWithActiveGemini(
         keyToUse,
         [{ parts }],
-        { responseMimeType: 'application/json' }
+        {
+          responseMimeType: 'application/json',
+          onStatus: (msg) => setAiStatusText(msg)
+        }
       );
 
       let cleanJson = rawText.trim();
@@ -407,14 +460,14 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
       }
     } catch (err: any) {
       console.error(err);
-      onShowToast('Error al Procesar', err.message || 'Error al conectar con Gemini.', 'error');
+      onShowToast('Error al Procesar', formatFriendlyGeminiError(err), 'error');
     } finally {
       setIsAnalyzingAI(false);
       setAiStatusText('✓ Procesamiento finalizado');
     }
   };
 
-  // Helper compartido para llamadas rápidas de texto con GoogleGenAI y respaldo automático
+  // Helper compartido para llamadas rápidas de texto con GoogleGenAI y respaldo automático ante 404/503
   const callGeminiTextHelper = async (
     key: string,
     prompt: string,
@@ -423,7 +476,29 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
     const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
     const ai = new GoogleGenAI({ apiKey: cleanKey });
 
-    for (const modelName of SUPPORTED_GEMINI_MODELS) {
+    let discovered: string[] = [];
+    try {
+      const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        discovered = (listData.models || [])
+          .filter((m: any) =>
+            Array.isArray(m.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes('generateContent') &&
+            typeof m.name === 'string' &&
+            m.name.includes('gemini') &&
+            !m.name.includes('tts') &&
+            !m.name.includes('image') &&
+            !m.name.includes('live') &&
+            !m.name.includes('embedding')
+          )
+          .map((m: any) => m.name.replace(/^models\//, ''));
+      }
+    } catch (_) {}
+
+    const pool = Array.from(new Set([...SUPPORTED_GEMINI_MODELS, ...discovered]));
+
+    for (const modelName of pool) {
       try {
         const res = await ai.models.generateContent({
           model: modelName,
@@ -433,39 +508,10 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
         const txt = res.text || res.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (txt.trim()) return txt;
       } catch (err: any) {
-        const msg = String(err?.message || err || '');
-        if (!msg.includes('404') && !msg.includes('not found')) {
+        if (!isRetryableGeminiError(err)) {
           throw err;
         }
-      }
-    }
-
-    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
-    if (listRes.ok) {
-      const listData = await listRes.json();
-      const available = (listData.models || [])
-        .filter((m: any) =>
-          Array.isArray(m.supportedGenerationMethods) &&
-          m.supportedGenerationMethods.includes('generateContent') &&
-          typeof m.name === 'string' &&
-          m.name.includes('gemini') &&
-          !m.name.includes('tts') &&
-          !m.name.includes('image') &&
-          !m.name.includes('live') &&
-          !m.name.includes('embedding')
-        )
-        .map((m: any) => m.name.replace(/^models\//, ''));
-
-      for (const discovered of available) {
-        try {
-          const res = await ai.models.generateContent({
-            model: discovered,
-            contents: prompt,
-            config: tools ? { tools } : undefined
-          });
-          const txt = res.text || res.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (txt.trim()) return txt;
-        } catch (_) {}
+        await sleepMs(400);
       }
     }
     return '';
