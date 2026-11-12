@@ -6,10 +6,19 @@ import {
   DollarSign, Shield, HeartPulse, Building, User, Key,
   ChevronDown, ExternalLink, RefreshCw, Eye, X, Send
 } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
 import {
   getGeminiApiKey, setGeminiApiKey, loadQuotes, saveQuotes
 } from '../services/storage';
 import { initSupabase } from '../services/supabase';
+
+// Modelo oficial activo de Google Gemini Flash compatible con generateContent en v1beta
+const OFFICIAL_GEMINI_MODEL = 'gemini-flash-latest';
+const SUPPORTED_GEMINI_MODELS = [
+  'gemini-flash-latest',
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite'
+];
 
 interface SmartQuoterViewProps {
   currentSeller: string;
@@ -204,40 +213,102 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     }
 
     setIsAnalyzingAI(true);
-    setAiStatusText('Analizando documentos y capturas con Gemini AI...');
+    setAiStatusText('Analizando documentos y capturas con Gemini Flash...');
 
     try {
-      // Helper para llamadas a Gemini v1beta con gemini-2.0-flash y gemini-1.5-flash (sin "models/" en el nombre)
-      const callGeminiGenerateContent = async (key: string, payload: any) => {
+      // Ejecutor inteligente con @google/genai y descubrimiento dinámico vía ListModels si un alias devuelve 404
+      const generateWithActiveGemini = async (
+        key: string,
+        contentsPayload: any,
+        options?: { responseMimeType?: string; tools?: any[] }
+      ): Promise<string> => {
         const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
-        // Usar gemini-2.0-flash (modelo de alta compatibilidad en v1beta) y gemini-1.5-flash
-        const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-        let lastError: Error | null = null;
+        const ai = new GoogleGenAI({ apiKey: cleanKey });
 
-        for (const model of candidateModels) {
+        const runWithModel = async (modelName: string): Promise<string> => {
+          const config: any = {};
+          if (options?.responseMimeType) {
+            config.responseMimeType = options.responseMimeType;
+          }
+          if (options?.tools) {
+            config.tools = options.tools;
+          }
+
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: contentsPayload,
+            config: Object.keys(config).length > 0 ? config : undefined
+          });
+
+          const resText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!resText || !resText.trim()) {
+            throw new Error(`No se recibió respuesta válida del modelo ${modelName}.`);
+          }
+          return resText;
+        };
+
+        let lastError: any = null;
+        for (const modelName of SUPPORTED_GEMINI_MODELS) {
           try {
-            // El nombre del modelo es exactamente "gemini-2.0-flash" o "gemini-1.5-flash" (sin la palabra "models/")
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`;
-            const res = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-              return await res.json();
+            return await runWithModel(modelName);
+          } catch (err: any) {
+            lastError = err;
+            const errMsg = String(err?.message || err || '');
+            const isModelNotFound =
+              errMsg.includes('404') ||
+              errMsg.includes('not found') ||
+              errMsg.includes('not supported for generateContent');
+            if (!isModelNotFound) {
+              throw err;
             }
-
-            const errJson = await res.json().catch(() => ({}));
-            const msg = errJson.error?.message || `HTTP ${res.status} con modelo ${model}`;
-            lastError = new Error(msg);
-            console.warn(`Aviso Gemini (${model}):`, msg);
-          } catch (e: any) {
-            lastError = e;
+            console.warn(`[Gemini] Modelo ${modelName} no disponible para esta clave, probando siguiente...`);
           }
         }
 
-        throw lastError || new Error('No se pudo conectar con los modelos de Gemini.');
+        // Si ningún alias estándar respondió, consultar ModelService.ListModels directamente en v1beta
+        try {
+          const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            const availableModels: string[] = (listData.models || [])
+              .filter((m: any) =>
+                Array.isArray(m.supportedGenerationMethods) &&
+                m.supportedGenerationMethods.includes('generateContent') &&
+                typeof m.name === 'string' &&
+                m.name.includes('gemini') &&
+                !m.name.includes('tts') &&
+                !m.name.includes('image') &&
+                !m.name.includes('live') &&
+                !m.name.includes('transcribe') &&
+                !m.name.includes('embedding') &&
+                !m.name.includes('vision')
+              )
+              .map((m: any) => m.name.replace(/^models\//, ''))
+              .sort((a: string, b: string) => {
+                const aFlash = a.includes('flash') ? 0 : 1;
+                const bFlash = b.includes('flash') ? 0 : 1;
+                if (aFlash !== bFlash) return aFlash - bFlash;
+                return b.localeCompare(a);
+              });
+
+            for (const discoveredModel of availableModels) {
+              if (SUPPORTED_GEMINI_MODELS.includes(discoveredModel)) continue;
+              try {
+                return await runWithModel(discoveredModel);
+              } catch (err: any) {
+                lastError = err;
+                const errMsg = String(err?.message || err || '');
+                if (!errMsg.includes('404') && !errMsg.includes('not found')) {
+                  throw err;
+                }
+              }
+            }
+          }
+        } catch (listErr) {
+          console.warn('Error consultando ListModels:', listErr);
+        }
+
+        throw lastError || new Error('No se encontró un modelo de Gemini compatible con generateContent.');
       };
 
       const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare, UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar, Cigna, etc.).
@@ -274,15 +345,11 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
         }
       });
 
-      const resData = await callGeminiGenerateContent(keyToUse, {
-        contents: [{ parts }],
-        generationConfig: {
-          responseMimeType: 'application/json'
-        }
-      });
-
-      const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) throw new Error('No se recibió texto estructurado de la IA.');
+      const rawText = await generateWithActiveGemini(
+        keyToUse,
+        [{ parts }],
+        { responseMimeType: 'application/json' }
+      );
 
       let cleanJson = rawText.trim();
       if (cleanJson.startsWith('```json')) {
@@ -294,18 +361,18 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
       const parsedPlans = JSON.parse(cleanJson);
 
       if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
-        // Optional: web search grounding for benefits
+        // Opcional: verificación de beneficios oficiales en Google
         if (enableWebSearch) {
           setAiStatusText('🌐 Consultando internet para verificar beneficios oficiales...');
           for (let i = 0; i < parsedPlans.length; i++) {
             const p = parsedPlans[i];
             try {
               const searchPrompt = `Busca en internet información oficial y resumida de la póliza de seguro '${p.company} ${p.planName}'. Resume en 1 sola oración sus beneficios más atractivos.`;
-              const searchData = await callGeminiGenerateContent(keyToUse, {
-                contents: [{ parts: [{ text: searchPrompt }] }],
-                tools: [{ google_search: {} }]
-              });
-              const benefit = searchData.candidates?.[0]?.content?.parts?.[0]?.text;
+              const benefit = await generateWithActiveGemini(
+                keyToUse,
+                [{ parts: [{ text: searchPrompt }] }],
+                { tools: [{ googleSearch: {} }] }
+              );
               if (benefit && benefit.length > 15) {
                 p.extraBenefit = benefit.replace(/[\n\r]+/g, ' ').trim();
               }
@@ -347,7 +414,64 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
     }
   };
 
-  // AI Summary Generator for a plan
+  // Helper compartido para llamadas rápidas de texto con GoogleGenAI y respaldo automático
+  const callGeminiTextHelper = async (
+    key: string,
+    prompt: string,
+    tools?: any[]
+  ): Promise<string> => {
+    const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
+    const ai = new GoogleGenAI({ apiKey: cleanKey });
+
+    for (const modelName of SUPPORTED_GEMINI_MODELS) {
+      try {
+        const res = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: tools ? { tools } : undefined
+        });
+        const txt = res.text || res.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (txt.trim()) return txt;
+      } catch (err: any) {
+        const msg = String(err?.message || err || '');
+        if (!msg.includes('404') && !msg.includes('not found')) {
+          throw err;
+        }
+      }
+    }
+
+    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+    if (listRes.ok) {
+      const listData = await listRes.json();
+      const available = (listData.models || [])
+        .filter((m: any) =>
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes('generateContent') &&
+          typeof m.name === 'string' &&
+          m.name.includes('gemini') &&
+          !m.name.includes('tts') &&
+          !m.name.includes('image') &&
+          !m.name.includes('live') &&
+          !m.name.includes('embedding')
+        )
+        .map((m: any) => m.name.replace(/^models\//, ''));
+
+      for (const discovered of available) {
+        try {
+          const res = await ai.models.generateContent({
+            model: discovered,
+            contents: prompt,
+            config: tools ? { tools } : undefined
+          });
+          const txt = res.text || res.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (txt.trim()) return txt;
+        } catch (_) {}
+      }
+    }
+    return '';
+  };
+
+  // AI Summary Generator for a plan con GoogleGenAI
   const generatePlanSummaryWithAI = async (planId: string) => {
     const keyToUse = geminiApiKey.trim();
     if (!keyToUse) {
@@ -365,37 +489,19 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
 Datos clave del plan: Prima: $${plan.premium}/mes, Deducible: ${plan.deductible}, Médico Primario: ${plan.primaryCare}, Extra: ${plan.extraBenefit}.
 Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas el beneficio principal sin términos complicados.`;
 
-      const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-      let resData: any = null;
-      for (const model of candidateModels) {
-        try {
-          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
-          const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-          });
-          if (res.ok) {
-            resData = await res.json();
-            break;
-          }
-        } catch (_) {}
-      }
+      const text = await callGeminiTextHelper(keyToUse, prompt);
 
-      if (resData) {
-        const text = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          const clean = text.replace(/[\n\r]+/g, ' ').replace(/^["']|["']$/g, '').trim();
-          updatePlan(planId, 'clientSummary', clean);
-          onShowToast('¡Listo!', 'Explicación sencilla redactada con IA.', 'success');
-        }
+      if (text) {
+        const clean = text.replace(/[\n\r]+/g, ' ').replace(/^["']|["']$/g, '').trim();
+        updatePlan(planId, 'clientSummary', clean);
+        onShowToast('¡Listo!', 'Explicación sencilla redactada con Gemini AI.', 'success');
       }
     } catch (e: any) {
       onShowToast('Error', 'No se pudo generar la explicación.', 'error');
     }
   };
 
-  // Web search grounding for a single plan
+  // Web search grounding para una póliza con GoogleGenAI
   const searchPlanBenefitsOnline = async (planId: string) => {
     const keyToUse = geminiApiKey.trim();
     if (!keyToUse) {
@@ -409,33 +515,13 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     onShowToast('Buscando en Google...', `Buscando folleto de ${plan.company} en internet...`, 'info');
 
     try {
-      const candidateModels = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-      let resData: any = null;
-      for (const model of candidateModels) {
-        try {
-          const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToUse}`;
-          const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: `Busca en internet los beneficios oficiales de la póliza '${plan.company} ${plan.planName}'. Extrae en una sola oración concisa qué cubre (por ejemplo: pagos por día de hospital, cirugías, deducible de ambulancia, red médica o dinero directo).` }] }],
-              tools: [{ google_search: {} }]
-            })
-          });
-          if (res.ok) {
-            resData = await res.json();
-            break;
-          }
-        } catch (_) {}
-      }
+      const searchPrompt = `Busca en internet los beneficios oficiales de la póliza '${plan.company} ${plan.planName}'. Extrae en una sola oración concisa qué cubre (por ejemplo: pagos por día de hospital, cirugías, deducible de ambulancia, red médica o dinero directo).`;
+      const benefit = await callGeminiTextHelper(keyToUse, searchPrompt, [{ googleSearch: {} }]);
 
-      if (resData) {
-        const benefit = resData.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (benefit) {
-          const clean = benefit.replace(/[\n\r]+/g, ' ').trim();
-          updatePlan(planId, 'extraBenefit', clean);
-          onShowToast('¡Folleto Encontrado!', 'Beneficios verificados con Google Search.', 'success');
-        }
+      if (benefit) {
+        const clean = benefit.replace(/[\n\r]+/g, ' ').trim();
+        updatePlan(planId, 'extraBenefit', clean);
+        onShowToast('¡Folleto Encontrado!', 'Beneficios verificados con Google Search.', 'success');
       }
     } catch (e) {
       onShowToast('Aviso', 'No se pudo completar la búsqueda en este momento.', 'error');
