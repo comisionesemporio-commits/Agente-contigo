@@ -1,5 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { HpgPlanLevel, QuotePlan, QuotePlanCategory, SavedQuote } from '../types';
+import {
+  AcusaLevel,
+  AfiLevel,
+  AhwPlanLevel,
+  BmiPhcsLevel,
+  EnrollFamilyTier,
+  HospitalWiseLevel,
+  HpgPlanLevel,
+  MedAccessAgeBracket,
+  MedAccessLevel,
+  MedMaxAgeBracket,
+  MedMaxDeductibleTier,
+  MedMaxScope,
+  QuotePlan,
+  QuotePlanCategory,
+  SavedQuote
+} from '../types';
 import {
   Sparkles, Upload, Copy, Printer, Save, Trash2, Globe, FileText,
   Key, RefreshCw, Eye, X, Send, Plus, Mail, AlertTriangle,
@@ -11,26 +27,47 @@ import {
 } from '../services/storage';
 import { initSupabase } from '../services/supabase';
 import {
-  AHW4_OFFICIAL_BULLETS,
+  ACUSA_SPECS,
+  AFI_SPECS,
+  AHW_SPECS,
+  BMI_PHCS_SPECS,
   FAMILY_GROUP_PRESETS,
   HOSPITALWISE_OFFICIAL_BULLETS,
+  HOSPITALWISE_SPECS,
   HPG_SPECS,
+  MEDACCESS_SPECS,
+  MEDMAX_DEDUCTIBLE_OPTIONS,
   MEDMAX_DEFAULT_WARNING,
   MEDMAX_OFFICIAL_BULLETS,
   SANITAS_OFFICIAL_BULLETS,
+  detectAhwLevelFromText,
+  detectEnrollFamilyTier,
+  detectHospitalWiseLevelFromText,
   detectHpgLevelFromText,
+  detectMedAccessAgeBracket,
+  detectMedMaxAgeBracket,
   enforceOfficialCatalogOnPlan,
   evaluateGeoAndAgeEligibility,
   formatMoney,
   getExactOfficialBulletsForPlan,
+  getMedMaxDeductibleDisplay,
+  getMedMaxMoopDisplay,
+  getMedMaxQuotePricing,
+  getPlanEnrollmentFee,
   getPlanFirstMonth,
   getPlanSanitasFee,
   getSanitasPricingForFamily,
+  isAcusaPlan,
+  isAfiPlan,
+  isAhwPlan,
+  isBmiPhcsPlan,
   isHpgPlan,
   isHospitalWisePlan,
+  isMedAccessPlan,
   isMedMaxPlan,
   isSanitasPlan,
-  parseMoney
+  parseMoney,
+  validateMedMaxDeductible
 } from '../data/officialPlanCatalog';
 
 // Modelos oficiales activos de Google Gemini Flash compatibles con generateContent en v1beta
@@ -280,30 +317,43 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   // ============================================================
   const addMedMaxPlan = () => {
     const newId = 'plan_medmax_' + Date.now();
+    const ageBracket = detectMedMaxAgeBracket(clientAges);
+    const familyTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const dedTier: MedMaxDeductibleTier = 750;
+    const pricing = getMedMaxQuotePricing(ageBracket, familyTier, dedTier);
+
     const created: QuotePlan = {
       id: newId,
-      tag: 'PLAN MEDMAX',
+      tag: 'PLAN MEDMAX (ERISA)',
       planCategory: 'medmax',
-      company: 'MedMax',
+      medmaxDeductibleTier: dedTier,
+      medmaxScope: pricing.scope,
+      medmaxAgeBracket: ageBracket,
+      medmaxFamilyTier: familyTier,
+      company: 'MedMax (Plan ERISA)',
       planName: 'Plan MedMax',
-      tier: 'Deductible Value Plan',
-      subtitleTag: 'DEDUCTIBLE VALUE PLAN • COPAGOS APLICAN TRAS DEDUCIBLE',
-      premium: '',
-      deductible: '$1,500',
-      moop: '$7,500',
-      primaryCare: '$50 (tras deducible)',
+      tier: `Deductible Value Plan • Edad ${ageBracket} años`,
+      subtitleTag: `PLAN ERISA • RED FIRST HEALTH • DEDUCIBLE ${pricing.scope === 'individual' ? 'INDIVIDUAL' : 'FAMILIAR'}`,
+      premium: pricing.monthlyPrice,
+      deductible: pricing.deductibleLabel,
+      moop: pricing.moopLabel,
+      primaryCare: '$50 (tras deducible) • RelyMD $0',
       specialist: '$50 (tras deducible)',
       genericRx: '$0 preventivos',
       urgencies: '$50 UC / $250 ER (tras deducible)',
       deductibleWarning: MEDMAX_DEFAULT_WARNING,
       highlights: MEDMAX_OFFICIAL_BULLETS,
-      extraBenefit: 'Preventivo y telemedicina 24/7 (RelyMD) a $0 inmediato.',
+      extraBenefit: 'Red First Health + Telemedicina RelyMD $0 + Bill Negotiator; copagos aplican tras cumplir deducible.',
       clientSummary: 'Plan MedMax con copagos tras cumplir el deducible anual (preventivo y RelyMD $0 inmediato).',
       isRecommended: false
     };
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
-    onShowToast('MedMax Agregado', 'Ingresa la prima mensual y selecciona/edita el deducible anual ($750, $1,500, etc.).', 'success');
+    onShowToast(
+      'MedMax Agregado',
+      `Tarifa por edad (${ageBracket}) y modalidad ${pricing.scope === 'individual' ? 'Individual' : 'Familiar'}: $${pricing.monthlyPrice}/mes (Ded. ${pricing.deductibleLabel}).`,
+      'success'
+    );
   };
 
   const addHpgPlan = (level: HpgPlanLevel = 'preferred4000') => {
@@ -335,31 +385,170 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     onShowToast(`${spec.title} Agregado`, `Cargados los montos exactos de ${spec.shortLabel}. Ingresa la prima mensual.`, 'success');
   };
 
-  const addAhw4Plan = () => {
-    const newId = 'plan_ahw4_' + Date.now();
+  const addAhwPlan = (level: AhwPlanLevel = 'ahw4') => {
+    const newId = `plan_${level}_` + Date.now();
+    const spec = AHW_SPECS[level];
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[famTier].toFixed(2);
     const created: QuotePlan = {
       id: newId,
-      tag: 'PLAN DE SALUD AHW 4',
+      tag: `PLAN DE SALUD ${spec.shortLabel.toUpperCase()}`,
       planCategory: 'ahw4',
-      company: 'AHW 4 (Red First Health)',
-      planName: 'Plan de Salud AHW 4 (Red First Health)',
-      tier: 'Red First Health • Hospital, Farmacia y Prevención',
-      subtitleTag: 'RED FIRST HEALTH • HOSPITAL $1,000/DÍA • FARMACIA $0/$5/$40',
-      premium: '',
+      ahwLevel: level,
+      medmaxFamilyTier: famTier,
+      company: `${spec.shortLabel} (Red First Health)`,
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `RED FIRST HEALTH PPO • RELYMD $0 • ${spec.shortLabel.toUpperCase()}`,
+      premium: rate,
       deductible: '$0',
-      moop: 'Tope Hospital $10,000/año • Tope Cirugía $2,000/año',
-      primaryCare: 'Cuidado preventivo $0 (red First Health, no hospital)',
-      specialist: 'Según red First Health',
-      genericRx: '$0 Prev. / $5 Pref. / $40 Marca (30 días)',
-      urgencies: 'Emergencia $1,000 / Ambulancia $500',
-      highlights: AHW4_OFFICIAL_BULLETS,
-      extraBenefit: 'Cuidado preventivo en centros no hospitalarios de la red First Health.',
-      clientSummary: 'Plan de Salud AHW 4 con beneficios hospitalarios fijos, farmacia y cuidado preventivo.',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Incluye Red First Health, Telemedicina RelyMD $0 y Bill Negotiator.',
+      clientSummary: `${spec.title}: $${rate}/mes con beneficios oficiales de red First Health.`,
       isRecommended: false
     };
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
-    onShowToast('AHW 4 Agregado', 'Beneficios exactos de AHW 4 (First Health) cargados. Ingresa la prima mensual.', 'success');
+    onShowToast(`${spec.shortLabel} Agregado`, `Tarifa oficial cargada ($${rate}/mes) con beneficios exactos de ${spec.shortLabel}.`, 'success');
+  };
+
+  const addMedAccessPlan = (level: MedAccessLevel = 'pro') => {
+    const newId = `plan_medaccess_${level}_` + Date.now();
+    const spec = MEDACCESS_SPECS[level];
+    const ageBracket = detectMedAccessAgeBracket(clientAges);
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[ageBracket][famTier].toFixed(2);
+
+    const created: QuotePlan = {
+      id: newId,
+      tag: `MEDACCESS ${spec.shortLabel.toUpperCase()}`,
+      planCategory: 'medaccess',
+      medaccessLevel: level,
+      medaccessAgeBracket: ageBracket,
+      medmaxFamilyTier: famTier,
+      company: 'MedAccess MVP (Red First Health)',
+      planName: spec.title,
+      tier: `${spec.shortLabel} • Edad ${ageBracket} años`,
+      subtitleTag: `MEDACCESS ${spec.shortLabel.toUpperCase()} • RED FIRST HEALTH • $0 DEDUCIBLE`,
+      premium: rate,
+      deductible: '$0 (Sin deducible)',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Red First Health PPO + Telemedicina RelyMD $0 + Bill Negotiator.',
+      clientSummary: `${spec.title} (Edad ${ageBracket}): $${rate}/mes, $0 deducible.`,
+      isRecommended: false
+    };
+    setPlans(prev => [...prev, created]);
+    setLastAddedPlanId(newId);
+    onShowToast(`${spec.title} Agregado`, `Tarifa oficial Edad ${ageBracket}: $${rate}/mes.`, 'success');
+  };
+
+  const addBmiPhcsPlan = (level: BmiPhcsLevel = 'value') => {
+    const newId = `plan_bmi_${level}_` + Date.now();
+    const spec = BMI_PHCS_SPECS[level];
+    const created: QuotePlan = {
+      id: newId,
+      tag: `BMI-PHCS ${spec.shortLabel.toUpperCase()}`,
+      planCategory: 'bmi_phcs',
+      bmiLevel: level,
+      company: 'BMI-PHCS (Red PHCS)',
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `RED PHCS • PLAN DE BENEFICIO LIMITADO POR DÍA • ${spec.shortLabel.toUpperCase()}`,
+      premium: '',
+      deductible: '$0 Ind. / $0 Fam.',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: 'Telemedicina $0 ilimitada',
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).',
+      clientSummary: `${spec.title} con $0 deducible y tope definido de días.`,
+      isRecommended: false
+    };
+    setPlans(prev => [...prev, created]);
+    setLastAddedPlanId(newId);
+    onShowToast(`${spec.title} Agregado`, 'Beneficios oficiales cargados. Ingresa la prima mensual.', 'success');
+  };
+
+  const addAfiPlan = (level: AfiLevel = 'copay3500') => {
+    const newId = `plan_afi_${level}_` + Date.now();
+    const spec = AFI_SPECS[level];
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[famTier].toFixed(2);
+    const created: QuotePlan = {
+      id: newId,
+      tag: `AFI ${spec.shortLabel.toUpperCase()}`,
+      planCategory: 'afi',
+      afiLevel: level,
+      medmaxFamilyTier: famTier,
+      company: 'AFI Major Medical',
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `AFI MAJOR MEDICAL • ${spec.shortLabel.toUpperCase()} • CARGO SOLICITUD $75`,
+      premium: rate,
+      hasEnrollmentFee: true,
+      enrollmentFee: '75.00',
+      enrollmentFeeLabel: 'cargo único de solicitud (AFI)',
+      deductible: spec.deductibleLabel,
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Major Medical tradicional con Telemedicina MYMDNOW $0 (preautorización requerida en cirugías/internación).',
+      clientSummary: `${spec.title}: $${rate}/mes (+$75.00 cargo único de solicitud).`,
+      isRecommended: false
+    };
+    setPlans(prev => [...prev, created]);
+    setLastAddedPlanId(newId);
+    onShowToast(`${spec.title} Agregado`, `Tarifa oficial $${rate}/mes (+$75 cargo único de solicitud).`, 'success');
+  };
+
+  const addAcusaPlan = (level: AcusaLevel = 'silver2') => {
+    const newId = `plan_acusa_${level}_` + Date.now();
+    const spec = ACUSA_SPECS[level];
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[famTier].toFixed(2);
+    const created: QuotePlan = {
+      id: newId,
+      tag: `ACUSA VAULT ${spec.shortLabel.toUpperCase()}`,
+      planCategory: 'acusa',
+      acusaLevel: level,
+      medmaxFamilyTier: famTier,
+      company: 'ACUSA • Vault Health Plan',
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `ACUSA VAULT • ${spec.shortLabel.toUpperCase()} • EMISIÓN GARANTIZADA`,
+      premium: rate,
+      hasEnrollmentFee: true,
+      enrollmentFee: '75.00',
+      enrollmentFeeLabel: 'tarifa única de inscripción (ACUSA)',
+      deductible: '$0 Ind. / $0 Fam.',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: 'Telemedicina $0 (Clever Health)',
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Emisión Garantizada Vault Health Plan con Clever Health & Benefits Hero App.',
+      clientSummary: `${spec.title}: $${rate}/mes (+$75.00 Application Fee único).`,
+      isRecommended: false
+    };
+    setPlans(prev => [...prev, created]);
+    setLastAddedPlanId(newId);
+    onShowToast(`${spec.title} Agregado`, `Tarifa oficial $${rate}/mes (+$75 Application Fee único).`, 'success');
   };
 
   const addSanitasCarePlan = () => {
@@ -400,34 +589,36 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     );
   };
 
-  const addHospitalWisePlan = () => {
+  const addHospitalWisePlan = (level: HospitalWiseLevel = 'bundle1') => {
+    const spec = HOSPITALWISE_SPECS[level];
     const newId = 'plan_hospitalwise_' + Date.now();
     const created: QuotePlan = {
       id: newId,
-      tag: 'HOSPITALWISE BUNDLE 1',
+      tag: spec.title.toUpperCase(),
       planCategory: 'hospitalwise',
-      company: 'Golden Rule Insurance Company',
-      planName: 'HospitalWise® Bundle 1',
-      tier: 'Indemnización Hospitalaria en Efectivo',
-      subtitleTag: 'GOLDEN RULE INSURANCE COMPANY • RESPALDO HOSPITALARIO EN EFECTIVO',
+      hospitalwiseLevel: level,
+      company: 'Golden Rule Insurance Company (UnitedHealthcare)',
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `GOLDEN RULE / UHC • ${spec.shortLabel.toUpperCase()} • EMISIÓN GARANTIZADA EN EFECTIVO`,
       premium: '',
       hasSanitasFee: false,
       deductible: '$0 (Sin deducible)',
-      moop: 'Hospital/UCI $1,000/día (máx. 10 días) • Observación $1,000/día (máx. 4 días/año)',
-      primaryCare: '$100/día consultorio (máx. 4 días/año)',
-      specialist: '$100/día médico',
-      genericRx: 'No aplica',
-      urgencies: 'ER $500/día • UC $250/día',
-      highlights: HOSPITALWISE_OFFICIAL_BULLETS,
-      extraBenefit: 'Beneficios en efectivo por hospitalización, observación, UCI, ER, UC, cirugía y ambulancia.',
-      clientSummary: 'HospitalWise Bundle 1 de Golden Rule Insurance Company.',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: spec.extraBenefitLabel,
+      clientSummary: `${spec.title} de Golden Rule Insurance Company (UnitedHealthcare).`,
       isRecommended: false
     };
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
     onShowToast(
-      'HospitalWise Bundle 1 Agregado',
-      'Beneficios oficiales cargados. Ingresa la prima mensual (ej. 25.79 o 110.18).',
+      `${spec.title} Agregado`,
+      'Beneficios oficiales cargados (Golden Rule / UHC). Ingresa la prima mensual (ej. 25.79 o 110.18).',
       'success'
     );
   };
@@ -547,25 +738,27 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
       includeInCombinedTotal: true
     };
 
+    const hwBundle1 = HOSPITALWISE_SPECS.bundle1;
     const newHw: QuotePlan = {
       id: hwId,
       tag: 'HOSPITALWISE BUNDLE 1 (PAQUETE COMBINADO)',
       planCategory: 'hospitalwise',
-      company: 'Golden Rule Insurance Company',
-      planName: 'HospitalWise® Bundle 1',
-      tier: 'Indemnización Hospitalaria en Efectivo',
-      subtitleTag: 'GOLDEN RULE INSURANCE COMPANY • RESPALDO HOSPITALARIO EN EFECTIVO',
+      hospitalwiseLevel: 'bundle1',
+      company: 'Golden Rule Insurance Company (UnitedHealthcare)',
+      planName: hwBundle1.title,
+      tier: hwBundle1.tierLabel,
+      subtitleTag: 'GOLDEN RULE / UHC • BUNDLE 1 • EMISIÓN GARANTIZADA EN EFECTIVO',
       premium: '',
       hasSanitasFee: false,
       deductible: '$0 (Sin deducible)',
-      moop: 'Hospital/UCI $1,000/día (máx. 10 días) • Observación $1,000/día (máx. 4 días/año)',
-      primaryCare: '$100/día consultorio (máx. 4 días/año)',
-      specialist: '$100/día médico',
-      genericRx: 'No aplica',
-      urgencies: 'ER $500/día • UC $250/día',
+      moop: hwBundle1.moopLabel,
+      primaryCare: hwBundle1.pcpLabel,
+      specialist: hwBundle1.specialistLabel,
+      genericRx: hwBundle1.rxLabel,
+      urgencies: hwBundle1.urgenciesLabel,
       highlights: HOSPITALWISE_OFFICIAL_BULLETS,
-      extraBenefit: 'Beneficios en efectivo por hospitalización, observación, UCI, ER, UC, cirugía y ambulancia.',
-      clientSummary: 'HospitalWise Bundle 1 de Golden Rule Insurance Company.',
+      extraBenefit: hwBundle1.extraBenefitLabel,
+      clientSummary: 'HospitalWise Bundle 1 de Golden Rule Insurance Company (UnitedHealthcare).',
       isRecommended: false,
       includeInCombinedTotal: true
     };
@@ -618,34 +811,306 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     );
   };
 
+  // Cambiar nivel exacto de HospitalWise (Basic / Bundle 1 / Bundle 2) con ficha cerrada oficial
+  const changeHospitalWiseLevel = (id: string, level: HospitalWiseLevel) => {
+    const spec = HOSPITALWISE_SPECS[level];
+    setPlans(prev =>
+      prev.map(p =>
+        p.id === id
+          ? {
+              ...p,
+              planCategory: 'hospitalwise',
+              hospitalwiseLevel: level,
+              company: 'Golden Rule Insurance Company (UnitedHealthcare)',
+              planName: spec.title,
+              tier: spec.tierLabel,
+              subtitleTag: `GOLDEN RULE / UHC • ${spec.shortLabel.toUpperCase()} • EMISIÓN GARANTIZADA EN EFECTIVO`,
+              deductible: '$0 (Sin deducible)',
+              moop: spec.moopLabel,
+              primaryCare: spec.pcpLabel,
+              specialist: spec.specialistLabel,
+              genericRx: spec.rxLabel,
+              urgencies: spec.urgenciesLabel,
+              highlights: spec.bullets,
+              extraBenefit: spec.extraBenefitLabel
+            }
+          : p
+      )
+    );
+  };
+
+  // Actualizar MedMax por Edad, Modalidad (Ind/Fam), Categoría Familiar y Nivel de Deducible Oficial
+  const updateMedMaxConfig = (
+    id: string,
+    updates: Partial<{
+      ageBracket: MedMaxAgeBracket;
+      scope: MedMaxScope;
+      familyTier: EnrollFamilyTier;
+      deductibleTier: MedMaxDeductibleTier;
+    }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextAge = updates.ageBracket || p.medmaxAgeBracket || detectMedMaxAgeBracket(clientAges);
+        let nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        let nextScope = updates.scope || p.medmaxScope || (nextFam === 'empleado' ? 'individual' : 'familiar');
+
+        // Mantener sincronía lógica entre Individual/Familiar y Categoría Familiar
+        if (updates.scope === 'individual' && !updates.familyTier) {
+          nextFam = 'empleado';
+        } else if (updates.scope === 'familiar' && !updates.familyTier && nextFam === 'empleado') {
+          nextFam = 'familiar';
+        } else if (updates.familyTier && !updates.scope) {
+          nextScope = updates.familyTier === 'empleado' ? 'individual' : 'familiar';
+        }
+
+        const nextDedTier = updates.deductibleTier || p.medmaxDeductibleTier || 750;
+        const pricing = getMedMaxQuotePricing(nextAge, nextFam, nextDedTier);
+        const dedLabel = getMedMaxDeductibleDisplay(nextDedTier, nextScope);
+        const moopLabel = getMedMaxMoopDisplay(nextScope);
+
+        return {
+          ...p,
+          planCategory: 'medmax',
+          medmaxAgeBracket: nextAge,
+          medmaxFamilyTier: nextFam,
+          medmaxScope: nextScope,
+          medmaxDeductibleTier: nextDedTier,
+          tier: `Deductible Value Plan • Edad ${nextAge} años`,
+          subtitleTag: `PLAN ERISA • RED FIRST HEALTH • DEDUCIBLE ${nextScope === 'individual' ? 'INDIVIDUAL' : 'FAMILIAR'}`,
+          premium: pricing.monthlyPrice,
+          deductible: dedLabel,
+          moop: moopLabel
+        };
+      })
+    );
+  };
+
+  // Actualizar AHW 1-6 por nivel y grupo familiar
+  const updateAhwConfig = (
+    id: string,
+    updates: Partial<{ level: AhwPlanLevel; familyTier: EnrollFamilyTier }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel = updates.level || p.ahwLevel || detectAhwLevelFromText(`${p.planName} ${p.tier}`);
+        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = AHW_SPECS[nextLevel];
+        return {
+          ...p,
+          planCategory: 'ahw4',
+          ahwLevel: nextLevel,
+          medmaxFamilyTier: nextFam,
+          company: `${spec.shortLabel} (Red First Health)`,
+          planName: spec.title,
+          tier: spec.tierLabel,
+          subtitleTag: `RED FIRST HEALTH PPO • RELYMD $0 • ${spec.shortLabel.toUpperCase()}`,
+          premium: spec.rates[nextFam].toFixed(2),
+          deductible: '$0',
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          genericRx: spec.rxLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets
+        };
+      })
+    );
+  };
+
+  // Actualizar MedAccess MVP por nivel, rango de edad (18-45 / 46-64) y grupo familiar
+  const updateMedAccessConfig = (
+    id: string,
+    updates: Partial<{ level: MedAccessLevel; ageBracket: MedAccessAgeBracket; familyTier: EnrollFamilyTier }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel = updates.level || p.medaccessLevel || 'pro';
+        const nextAge = updates.ageBracket || p.medaccessAgeBracket || detectMedAccessAgeBracket(clientAges);
+        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = MEDACCESS_SPECS[nextLevel];
+        return {
+          ...p,
+          planCategory: 'medaccess',
+          medaccessLevel: nextLevel,
+          medaccessAgeBracket: nextAge,
+          medmaxFamilyTier: nextFam,
+          company: 'MedAccess MVP (Red First Health)',
+          planName: spec.title,
+          tier: `${spec.shortLabel} • Edad ${nextAge} años`,
+          subtitleTag: `MEDACCESS ${spec.shortLabel.toUpperCase()} • RED FIRST HEALTH • $0 DEDUCIBLE`,
+          premium: spec.rates[nextAge][nextFam].toFixed(2),
+          deductible: '$0 (Sin deducible)',
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          genericRx: spec.rxLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets
+        };
+      })
+    );
+  };
+
+  // Actualizar BMI-PHCS (Basic / Value / Advantage)
+  const changeBmiLevel = (id: string, level: BmiPhcsLevel) => {
+    const spec = BMI_PHCS_SPECS[level];
+    setPlans(prev =>
+      prev.map(p =>
+        p.id === id
+          ? {
+              ...p,
+              planCategory: 'bmi_phcs',
+              bmiLevel: level,
+              company: 'BMI-PHCS (Red PHCS)',
+              planName: spec.title,
+              tier: spec.tierLabel,
+              subtitleTag: `RED PHCS • PLAN DE BENEFICIO LIMITADO POR DÍA • ${spec.shortLabel.toUpperCase()}`,
+              deductible: '$0 Ind. / $0 Fam.',
+              moop: spec.moopLabel,
+              primaryCare: spec.pcpLabel,
+              specialist: spec.specialistLabel,
+              urgencies: spec.urgenciesLabel,
+              highlights: spec.bullets
+            }
+          : p
+      )
+    );
+  };
+
+  // Actualizar AFI Major Medical (3500 HSA vs 3500 Copay y grupo familiar)
+  const updateAfiConfig = (
+    id: string,
+    updates: Partial<{ level: AfiLevel; familyTier: EnrollFamilyTier }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel = updates.level || p.afiLevel || 'copay3500';
+        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = AFI_SPECS[nextLevel];
+        return {
+          ...p,
+          planCategory: 'afi',
+          afiLevel: nextLevel,
+          medmaxFamilyTier: nextFam,
+          company: 'AFI Major Medical',
+          planName: spec.title,
+          tier: spec.tierLabel,
+          subtitleTag: `AFI MAJOR MEDICAL • ${spec.shortLabel.toUpperCase()} • CARGO SOLICITUD $75`,
+          premium: spec.rates[nextFam].toFixed(2),
+          deductible: spec.deductibleLabel,
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          genericRx: spec.rxLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets
+        };
+      })
+    );
+  };
+
+  // Actualizar ACUSA Vault (Bronze 2 vs Silver 2 y grupo familiar)
+  const updateAcusaConfig = (
+    id: string,
+    updates: Partial<{ level: AcusaLevel; familyTier: EnrollFamilyTier }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel = updates.level || p.acusaLevel || 'silver2';
+        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = ACUSA_SPECS[nextLevel];
+        return {
+          ...p,
+          planCategory: 'acusa',
+          acusaLevel: nextLevel,
+          medmaxFamilyTier: nextFam,
+          company: 'ACUSA • Vault Health Plan',
+          planName: spec.title,
+          tier: spec.tierLabel,
+          subtitleTag: `ACUSA VAULT • ${spec.shortLabel.toUpperCase()} • EMISIÓN GARANTIZADA`,
+          premium: spec.rates[nextFam].toFixed(2),
+          deductible: '$0 Ind. / $0 Fam.',
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets
+        };
+      })
+    );
+  };
+
   const updatePlan = (id: string, field: keyof QuotePlan, value: any) => {
     setPlans(prev =>
       prev.map(p => {
         if (p.id !== id) return p;
         let next: QuotePlan = { ...p, [field]: value };
+        const ctx = { members: clientMembers, ages: clientAges };
 
         // Si cambia de categoría en el selector, aplicar ficha oficial exacta
         if (field === 'planCategory') {
           if (value === 'medmax') {
-            next = enforceOfficialCatalogOnPlan({ ...next, planCategory: 'medmax', planName: 'Plan MedMax' });
+            next = enforceOfficialCatalogOnPlan({ ...next, planCategory: 'medmax', planName: 'Plan MedMax', premium: '' }, ctx);
           } else if (value === 'hpg4000') {
-            next = enforceOfficialCatalogOnPlan({
-              ...next,
-              planCategory: 'hpg4000',
-              hpgLevel: next.hpgLevel || 'preferred4000',
-              planName: HPG_SPECS[next.hpgLevel || 'preferred4000'].title
-            });
+            next = enforceOfficialCatalogOnPlan(
+              {
+                ...next,
+                planCategory: 'hpg4000',
+                hpgLevel: next.hpgLevel || 'preferred4000',
+                planName: HPG_SPECS[next.hpgLevel || 'preferred4000'].title
+              },
+              ctx
+            );
           } else if (value === 'ahw4') {
-            next = enforceOfficialCatalogOnPlan({ ...next, planCategory: 'ahw4', planName: 'Plan de Salud AHW 4 (Red First Health)' });
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'ahw4', ahwLevel: next.ahwLevel || 'ahw4', planName: AHW_SPECS[next.ahwLevel || 'ahw4'].title, premium: '' },
+              ctx
+            );
+          } else if (value === 'medaccess') {
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'medaccess', medaccessLevel: next.medaccessLevel || 'pro', premium: '' },
+              ctx
+            );
+          } else if (value === 'bmi_phcs') {
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'bmi_phcs', bmiLevel: next.bmiLevel || 'value' },
+              ctx
+            );
+          } else if (value === 'afi') {
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'afi', afiLevel: next.afiLevel || 'copay3500', premium: '' },
+              ctx
+            );
+          } else if (value === 'acusa') {
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'acusa', acusaLevel: next.acusaLevel || 'silver2', premium: '' },
+              ctx
+            );
           } else if (value === 'sanitas') {
-            next = enforceOfficialCatalogOnPlan({ ...next, planCategory: 'sanitas', hasSanitasFee: true, enrollmentFee: '40.00' });
+            next = enforceOfficialCatalogOnPlan({ ...next, planCategory: 'sanitas', hasSanitasFee: true, enrollmentFee: '40.00' }, ctx);
           } else if (value === 'hospitalwise') {
-            next = enforceOfficialCatalogOnPlan({ ...next, planCategory: 'hospitalwise', hasSanitasFee: false, planName: 'HospitalWise® Bundle 1' });
+            next = enforceOfficialCatalogOnPlan(
+              {
+                ...next,
+                planCategory: 'hospitalwise',
+                hospitalwiseLevel: next.hospitalwiseLevel || 'bundle1',
+                hasSanitasFee: false,
+                planName: HOSPITALWISE_SPECS[next.hospitalwiseLevel || 'bundle1'].title
+              },
+              ctx
+            );
           } else if (value === 'aca') {
             next = {
               ...next,
               planCategory: 'aca',
               hasSanitasFee: false,
+              hasEnrollmentFee: false,
               subtitleTag: 'MERCADO DE SALUD ACA (OBAMACARE)'
             };
           }
@@ -674,6 +1139,30 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
 
         if (field === 'hasSanitasFee' && value === true && !next.enrollmentFee) {
           next.enrollmentFee = '40.00';
+        }
+        if (field === 'hasEnrollmentFee' && value === true && !next.enrollmentFee) {
+          next.enrollmentFee = '75.00';
+        }
+        // Si es HospitalWise y editan el nombre del plan escribiendo "Basic", "Bundle 1" o "Bundle 2", sincronizar sus montos
+        if (field === 'planName' && isHospitalWisePlan(next)) {
+          const detectedHw = detectHospitalWiseLevelFromText(String(value));
+          if (detectedHw !== next.hospitalwiseLevel) {
+            const spec = HOSPITALWISE_SPECS[detectedHw];
+            next = {
+              ...next,
+              hospitalwiseLevel: detectedHw,
+              tier: spec.tierLabel,
+              subtitleTag: `GOLDEN RULE / UHC • ${spec.shortLabel.toUpperCase()} • EMISIÓN GARANTIZADA EN EFECTIVO`,
+              deductible: '$0 (Sin deducible)',
+              moop: spec.moopLabel,
+              primaryCare: spec.pcpLabel,
+              specialist: spec.specialistLabel,
+              genericRx: spec.rxLabel,
+              urgencies: spec.urgenciesLabel,
+              highlights: spec.bullets,
+              extraBenefit: spec.extraBenefitLabel
+            };
+          }
         }
         return next;
       })
@@ -801,7 +1290,7 @@ Contexto del cliente:
 - Edad(es) de los solicitantes: ${clientAges || 'No especificadas'}
 
 Instrucciones estrictas:
-1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000, Preferred 4000, Premier 5000, MedMax, AHW 4 o HospitalWise Bundle 1), indica exactamente su categoría en "planCategory" y su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, junto con la prima mensual y el deducible mostrados.
+1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, MedMax, AHW 1-6, MedAccess MVP Basic/Pro, BMI-PHCS Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
 2. Si es un plan ACA (Obamacare), extrae EXACTAMENTE de la captura/PDF: Aseguradora, Nombre exacto del plan, Nivel (Bronce/Plata/Oro), ID del plan ("planIdCode"), Prima con crédito fiscal ("premium"), Ahorro mensual o crédito fiscal ("subsidyAmount"), Deducible anual ("deductible"), Máximo de bolsillo ("moop"), Requisito de referido ("referralRequired"), y desglosa las 4 áreas médicas exactas ("primaryCare", "specialist", "acaLabsImaging", "acaErHospital", "acaRxTiers").
 
 Responde ÚNICAMENTE un array JSON válido con esta estructura:
@@ -810,8 +1299,9 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     "company": "Aseguradora",
     "planName": "Nombre exacto del plan",
     "tier": "Nivel (Bronce / Plata / Oro / etc.)",
-    "planCategory": "Una de: medmax | hpg4000 | ahw4 | sanitas | hospitalwise | aca | custom",
+    "planCategory": "Una de: medmax | hpg4000 | ahw4 | medaccess | bmi_phcs | afi | acusa | sanitas | hospitalwise | aca | custom",
     "hpgLevel": "Solo si es HPG: select2000 | preferred4000 | premier5000",
+    "hospitalwiseLevel": "Solo si es HospitalWise: basic | bundle1 | bundle2",
     "planIdCode": "ID del plan ACA si aparece (ej: 21525FL0020035), si no ''",
     "premium": "Prima mensual en dólares (solo número con decimales, ej: '45.20')",
     "subsidyAmount": "Ahorro mensual o crédito fiscal aplicado en ACA (ej: '$485.00/mes'), si no ''",
@@ -856,25 +1346,33 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       const parsedPlans = JSON.parse(cleanJson);
 
       if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
+        const validCategories = ['medmax', 'hpg4000', 'ahw4', 'medaccess', 'bmi_phcs', 'afi', 'acusa', 'sanitas', 'hospitalwise', 'aca', 'custom'];
         const mapped: QuotePlan[] = parsedPlans.map((p, idx) => {
           const combinedName = `${p.company || ''} ${p.planName || ''} ${p.tier || ''}`.toLowerCase();
           const detectedCategory: QuotePlanCategory =
-            p.planCategory &&
-            ['medmax', 'hpg4000', 'ahw4', 'sanitas', 'hospitalwise', 'aca', 'custom'].includes(p.planCategory)
+            p.planCategory && validCategories.includes(p.planCategory)
               ? p.planCategory
               : combinedName.includes('medmax')
                 ? 'medmax'
-                : combinedName.includes('hospitalwise')
-                  ? 'hospitalwise'
-                  : combinedName.includes('protectorguard') || /\bhpg\b/.test(combinedName)
-                    ? 'hpg4000'
-                    : combinedName.includes('ahw')
-                      ? 'ahw4'
-                      : combinedName.includes('sanitas')
-                        ? 'sanitas'
-                        : p.planIdCode || p.subsidyAmount || p.acaRxTiers
-                          ? 'aca'
-                          : 'custom';
+                : combinedName.includes('medaccess') || combinedName.includes('mvp basic') || combinedName.includes('mvp pro')
+                  ? 'medaccess'
+                  : combinedName.includes('bmi') && combinedName.includes('phcs')
+                    ? 'bmi_phcs'
+                    : /\bafi\b/.test(combinedName) || combinedName.includes('3500 hsa') || combinedName.includes('3500 copay')
+                      ? 'afi'
+                      : combinedName.includes('acusa') || combinedName.includes('vault') || combinedName.includes('bronze 2') || combinedName.includes('silver 2')
+                        ? 'acusa'
+                        : combinedName.includes('hospitalwise')
+                          ? 'hospitalwise'
+                          : combinedName.includes('protectorguard') || /\bhpg\b/.test(combinedName)
+                            ? 'hpg4000'
+                            : combinedName.includes('ahw')
+                              ? 'ahw4'
+                              : combinedName.includes('sanitas')
+                                ? 'sanitas'
+                                : p.planIdCode || p.subsidyAmount || p.acaRxTiers
+                                  ? 'aca'
+                                  : 'custom';
 
           const hpgLevelDetected: HpgPlanLevel | undefined =
             detectedCategory === 'hpg4000'
@@ -883,11 +1381,19 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 : detectHpgLevelFromText(combinedName)
               : undefined;
 
+          const hospitalwiseLevelDetected: HospitalWiseLevel | undefined =
+            detectedCategory === 'hospitalwise'
+              ? p.hospitalwiseLevel && ['basic', 'bundle1', 'bundle2'].includes(p.hospitalwiseLevel)
+                ? p.hospitalwiseLevel
+                : detectHospitalWiseLevelFromText(combinedName)
+              : undefined;
+
           const basePlan: QuotePlan = {
             id: 'plan_ai_' + Date.now() + '_' + idx,
             tag: idx === 0 ? 'OPCIÓN PRINCIPAL RECOMENDADA' : 'OPCIÓN DE COBERTURA',
             planCategory: detectedCategory,
             hpgLevel: hpgLevelDetected,
+            hospitalwiseLevel: hospitalwiseLevelDetected,
             company: p.company || 'Aseguradora',
             planName: p.planName || 'Plan Médico',
             tier: p.tier || 'Estándar',
@@ -913,8 +1419,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             isRecommended: idx === 0
           };
 
-          // Forzar la ficha cerrada oficial en planes no-ACA (cero mezclas / cero errores)
-          return enforceOfficialCatalogOnPlan(basePlan);
+          return enforceOfficialCatalogOnPlan(basePlan, { members: clientMembers, ages: clientAges });
         });
 
         setPlans(mapped);
@@ -1042,7 +1547,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     const combinedList = plans.filter(p => Boolean(p.includeInCombinedTotal));
     const hasCombined = combinedList.length >= 2;
     const combinedReg = combinedList.reduce((acc, p) => acc + parseMoney(p.premium), 0);
-    const combinedFee = combinedList.reduce((acc, p) => acc + getPlanSanitasFee(p), 0);
+    const combinedFee = combinedList.reduce((acc, p) => acc + getPlanEnrollmentFee(p).amount, 0);
     const combinedFirst = combinedReg + combinedFee;
     const agesSegment = clientAges ? ` • Edades: ${clientAges}` : '';
 
@@ -1119,15 +1624,15 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
 
     plans.forEach((p, idx) => {
       const reg = parseMoney(p.premium);
-      const fee = getPlanSanitasFee(p);
+      const feeInfo = getPlanEnrollmentFee(p);
       const firstM = getPlanFirstMonth(p);
       const bullets = getExactOfficialBulletsForPlan(p);
       const isPartOfBundle = hasCombined && Boolean(p.includeInCombinedTotal);
 
       lines.push(`OPCIÓN ${idx + 1}: ${p.planName} (${p.company})${isPartOfBundle ? ' [PARTE DEL PAQUETE COMBINADO]' : ''}`);
       lines.push(`• Mensualidad Regular: $${formatMoney(reg)}/mes${p.planCategory === 'aca' && p.subsidyAmount ? ` (Crédito fiscal / ahorro mensual: ${p.subsidyAmount})` : ''}`);
-      if (fee > 0) {
-        lines.push(`• Inversión 1.er Mes: $${formatMoney(firstM)} (incluye +$${formatMoney(fee)} fee único de inscripción de Sanitas Care)`);
+      if (feeInfo.amount > 0) {
+        lines.push(`• Inversión 1.er Mes: $${formatMoney(firstM)} (incluye +$${formatMoney(feeInfo.amount)} ${feeInfo.label})`);
       }
       if (p.planCategory === 'aca') {
         if (p.tier) lines.push(`• Nivel del Plan: ${p.tier}${p.planIdCode ? ` | ID del Plan: ${p.planIdCode}` : ''}`);
@@ -1145,7 +1650,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       lines.push(`--------------------------------------------------`);
       lines.push(`TOTAL PAQUETE COMBINADO (${combinedList.map(p => p.planName).join(' + ')}):`);
       if (combinedFee > 0) {
-        lines.push(`• Total 1.er Mes Combinado (incluye +$${formatMoney(combinedFee)} fee único de inscripción Sanitas): $${formatMoney(combinedFirst)}`);
+        lines.push(`• Total 1.er Mes Combinado (incluye +$${formatMoney(combinedFee)} fee único de inscripción/solicitud): $${formatMoney(combinedFirst)}`);
       }
       lines.push(`• Total Mensual Regular Combinado: $${formatMoney(combinedReg)}/mes`);
       lines.push(`--------------------------------------------------`);
@@ -1194,12 +1699,12 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     msg += `Cotización ${quoteYear} para ${clientLocation}${clientAges ? ` (Edades: ${clientAges})` : ''}:\n\n`;
 
     plans.forEach((plan, i) => {
-      const fee = getPlanSanitasFee(plan);
+      const feeInfo = getPlanEnrollmentFee(plan);
       const firstM = getPlanFirstMonth(plan);
       const isPartOfBundle = hasCombined && Boolean(plan.includeInCombinedTotal);
       msg += `Opción ${i + 1}: ${plan.planName}${isPartOfBundle ? ' (Combinado)' : ''}\n`;
       msg += `• Mensualidad: $${formatMoney(parseMoney(plan.premium))}/mes`;
-      if (fee > 0) msg += ` (1.er mes: $${formatMoney(firstM)} con fee Sanitas $${formatMoney(fee)})`;
+      if (feeInfo.amount > 0) msg += ` (1.er mes: $${formatMoney(firstM)} incl. +$${formatMoney(feeInfo.amount)} inscripción)`;
       msg += `\n`;
       msg += `• Deducible: ${plan.deductible} | Máx. Bolsillo: ${plan.moop || 'N/A'}\n`;
       if (isMedMaxPlan(plan)) {
@@ -1229,14 +1734,14 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     msg += `👋 ¡Hola ${clientName}! Te comparto tus opciones para ${clientMembers}${clientAges ? ` (Edades: ${clientAges})` : ''} en ${clientLocation}:\n\n`;
 
     plans.forEach((plan, i) => {
-      const fee = getPlanSanitasFee(plan);
+      const feeInfo = getPlanEnrollmentFee(plan);
       const firstM = getPlanFirstMonth(plan);
       const bullets = getExactOfficialBulletsForPlan(plan);
       const isPartOfBundle = hasCombined && Boolean(plan.includeInCombinedTotal);
       msg += `📌 *OPCIÓN ${i + 1}: ${plan.planName}*${isPartOfBundle ? ' _(Paquete Combinado)_' : ''}\n`;
       msg += `• 💰 *Mensualidad Regular:* $${formatMoney(parseMoney(plan.premium))}/mes\n`;
-      if (fee > 0) {
-        msg += `• 🧾 *1.er Mes (incluye fee único Sanitas +$${formatMoney(fee)}):* $${formatMoney(firstM)}\n`;
+      if (feeInfo.amount > 0) {
+        msg += `• 🧾 *1.er Mes (incluye +$${formatMoney(feeInfo.amount)} ${feeInfo.label}):* $${formatMoney(firstM)}\n`;
       }
       if (plan.planCategory === 'aca' && plan.subsidyAmount) {
         msg += `• 🏛️ *Crédito Fiscal ACA:* ${plan.subsidyAmount}\n`;
@@ -1377,8 +1882,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
   const combinedPlans = plans.filter(p => Boolean(p.includeInCombinedTotal));
   const hasCombinedPackage = combinedPlans.length >= 2;
   const combinedMonthlyTotal = combinedPlans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
-  const combinedSanitasFee = combinedPlans.reduce((acc, p) => acc + getPlanSanitasFee(p), 0);
-  const combinedFirstMonthTotal = combinedMonthlyTotal + combinedSanitasFee;
+  const combinedEnrollmentFee = combinedPlans.reduce((acc, p) => acc + getPlanEnrollmentFee(p).amount, 0);
+  const combinedFirstMonthTotal = combinedMonthlyTotal + combinedEnrollmentFee;
   const hasSanitasInPlans = plans.some(p => isSanitasPlan(p) && !isHospitalWisePlan(p));
   const hasHospitalWiseInPlans = plans.some(p => isHospitalWisePlan(p));
   const areSanitasAndHospitalWiseCombined =
@@ -1475,8 +1980,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       <div className="p-6 sm:p-8 space-y-5">
         {plans.map((plan, idx) => {
           const regularMonthly = parseMoney(plan.premium);
-          const sanitasFee = getPlanSanitasFee(plan);
-          const firstMonth = regularMonthly + sanitasFee;
+          const feeInfo = getPlanEnrollmentFee(plan);
+          const firstMonth = regularMonthly + feeInfo.amount;
           const isMedMax = isMedMaxPlan(plan);
           const bullets = getExactOfficialBulletsForPlan(plan);
 
@@ -1517,9 +2022,9 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                     ${formatMoney(regularMonthly)}{' '}
                     <span className="text-xs font-bold text-slate-500">/ mes</span>
                   </div>
-                  {sanitasFee > 0 ? (
+                  {feeInfo.amount > 0 ? (
                     <span className="text-[11px] font-extrabold text-teal-700 block mt-1">
-                      1.er mes: ${formatMoney(firstMonth)} (incluye +${formatMoney(sanitasFee)} fee único de inscripción)
+                      1.er mes: ${formatMoney(firstMonth)} (incluye +${formatMoney(feeInfo.amount)} {feeInfo.label})
                     </span>
                   ) : plan.planCategory === 'aca' && plan.subsidyAmount ? (
                     <span className="text-[11px] font-bold text-emerald-700 block mt-1">
@@ -1603,8 +2108,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
               <tbody className="divide-y divide-slate-200">
                 {plans.map((plan, idx) => {
                   const reg = parseMoney(plan.premium);
-                  const fee = getPlanSanitasFee(plan);
-                  const firstM = reg + fee;
+                  const feeInfo = getPlanEnrollmentFee(plan);
+                  const firstM = reg + feeInfo.amount;
                   const isInCombined = hasCombinedPackage && Boolean(plan.includeInCombinedTotal);
                   return (
                     <tr key={plan.id} className={plan.isRecommended ? 'bg-teal-50/40' : isInCombined ? 'bg-cyan-50/30' : 'bg-white'}>
@@ -1625,9 +2130,9 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                       </td>
                       <td className="py-2.5 px-3 text-right font-black text-[#005b9f] tabular-nums">
                         ${formatMoney(firstM)}
-                        {fee > 0 && (
+                        {feeInfo.amount > 0 && (
                           <span className="block text-[10px] font-bold text-teal-700">
-                            (incl. +${formatMoney(fee)} Sanitas)
+                            (incl. +${formatMoney(feeInfo.amount)} inscripción)
                           </span>
                         )}
                       </td>
@@ -1643,7 +2148,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                       Total Paquete Combinado ({combinedPlans.length} planes)
                       <span className="block text-[10px] font-bold text-slate-600 mt-0.5">
                         {combinedPlans.map(p => p.planName).join(' + ')}
-                        {combinedSanitasFee > 0 && ` • Incluye +$${formatMoney(combinedSanitasFee)} fee único inscripción Sanitas 1.er mes`}
+                        {combinedEnrollmentFee > 0 && ` • Incluye +$${formatMoney(combinedEnrollmentFee)} fee único 1.er mes`}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right font-black text-[#005b9f] tabular-nums">
@@ -2097,7 +2602,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5">
-              {/* 1. + MedMax */}
+              {/* 1. + MedMax (ERISA • Edad + Deducible Ind/Fam) */}
               <button
                 type="button"
                 onClick={addMedMaxPlan}
@@ -2107,7 +2612,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                   <span className="font-black text-xs">+ MedMax</span>
                   <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
                 </div>
-                <span className="text-[10px] font-bold opacity-85">Copagos tras Deducible</span>
+                <span className="text-[10px] font-bold opacity-85">Ded. Ind/Fam + Edad Auto</span>
               </button>
 
               {/* 2. + HPG (2000/4000/5000) con selector exacto de nivel */}
@@ -2148,18 +2653,30 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
               </div>
 
-              {/* 3. + AHW 4 */}
-              <button
-                type="button"
-                onClick={addAhw4Plan}
-                className="p-3 rounded-2xl border border-indigo-300 bg-indigo-50/70 hover:bg-indigo-100/70 text-indigo-950 text-left transition shadow-xs cursor-pointer flex flex-col justify-between gap-1"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-black text-xs">+ AHW 4</span>
+              {/* 3. + AHW (1 al 6) con selector exacto */}
+              <div className="p-2.5 rounded-2xl border border-indigo-300 bg-indigo-50/70 text-indigo-950 flex flex-col justify-between gap-1.5 shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => addAhwPlan('ahw4')}
+                  className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                >
+                  <span className="font-black text-xs">+ AHW (1 al 6)</span>
                   <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                </button>
+                <div className="grid grid-cols-6 gap-0.5">
+                  {(['ahw1', 'ahw2', 'ahw3', 'ahw4', 'ahw5', 'ahw6'] as AhwPlanLevel[]).map((lvl, idx) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => addAhwPlan(lvl)}
+                      className="py-1 rounded bg-white hover:bg-indigo-600 hover:text-white border border-indigo-200 text-[10px] font-black transition cursor-pointer text-center"
+                      title={`Agregar ${AHW_SPECS[lvl].title}`}
+                    >
+                      {idx + 1}
+                    </button>
+                  ))}
                 </div>
-                <span className="text-[10px] font-bold opacity-85">Red First Health</span>
-              </button>
+              </div>
 
               {/* 4. + Sanitas Care */}
               <button
@@ -2174,18 +2691,30 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 <span className="text-[10px] font-bold opacity-85">+$40 Fee 1.er Mes Auto</span>
               </button>
 
-              {/* 5. + HospitalWise Bundle 1 */}
-              <button
-                type="button"
-                onClick={addHospitalWisePlan}
-                className="p-3 rounded-2xl border border-cyan-300 bg-cyan-50/80 hover:bg-cyan-100/80 text-cyan-950 text-left transition shadow-xs cursor-pointer flex flex-col justify-between gap-1"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-black text-xs">+ HospitalWise Bundle 1</span>
+              {/* 5. + HospitalWise (Basic / Bundle 1 / Bundle 2) */}
+              <div className="p-2.5 rounded-2xl border border-cyan-300 bg-cyan-50/80 text-cyan-950 flex flex-col justify-between gap-1.5 shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => addHospitalWisePlan('bundle1')}
+                  className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                >
+                  <span className="font-black text-xs">+ HospitalWise</span>
                   <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                </button>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['basic', 'bundle1', 'bundle2'] as HospitalWiseLevel[]).map(lvl => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => addHospitalWisePlan(lvl)}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-cyan-600 hover:text-white border border-cyan-200 text-[10px] font-black transition cursor-pointer text-center"
+                      title={`Agregar ${HOSPITALWISE_SPECS[lvl].title} con beneficios oficiales`}
+                    >
+                      {HOSPITALWISE_SPECS[lvl].shortLabel}
+                    </button>
+                  ))}
                 </div>
-                <span className="text-[10px] font-bold opacity-85">Golden Rule • Efectivo Hospital</span>
-              </button>
+              </div>
 
               {/* 6. + Plan ACA (Obamacare) */}
               <button
@@ -2199,6 +2728,124 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
                 <span className="text-[10px] font-bold opacity-85">Con Subsidio + Día 1</span>
               </button>
+            </div>
+
+            {/* Fila Adicional: Planes de Guía Enroll Prime / Aosis (MedAccess MVP, BMI-PHCS, AFI, ACUSA) */}
+            <div className="pt-2.5 border-t border-slate-100 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                  Planes Guía Enroll Prime / Aosis (Tarifas Auto por Edad y Grupo Familiar)
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {/* MedAccess MVP */}
+                <div className="p-2.5 rounded-2xl border border-violet-300 bg-violet-50/60 text-violet-950 flex flex-col justify-between gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addMedAccessPlan('pro')}
+                    className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                  >
+                    <span className="font-black text-xs">+ MedAccess MVP</span>
+                    <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                  </button>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => addMedAccessPlan('basic')}
+                      className="py-1 px-1.5 rounded-lg bg-white hover:bg-violet-600 hover:text-white border border-violet-200 text-[10px] font-black transition cursor-pointer text-center"
+                    >
+                      MVP Basic
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addMedAccessPlan('pro')}
+                      className="py-1 px-1.5 rounded-lg bg-white hover:bg-violet-600 hover:text-white border border-violet-200 text-[10px] font-black transition cursor-pointer text-center"
+                    >
+                      MVP Pro
+                    </button>
+                  </div>
+                </div>
+
+                {/* BMI-PHCS */}
+                <div className="p-2.5 rounded-2xl border border-teal-300 bg-teal-50/50 text-teal-950 flex flex-col justify-between gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addBmiPhcsPlan('value')}
+                    className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                  >
+                    <span className="font-black text-xs">+ BMI-PHCS (Red PHCS)</span>
+                    <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                  </button>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['basic', 'value', 'advantage'] as BmiPhcsLevel[]).map(lvl => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => addBmiPhcsPlan(lvl)}
+                        className="py-1 px-1 rounded-lg bg-white hover:bg-teal-600 hover:text-white border border-teal-200 text-[10px] font-black transition cursor-pointer text-center"
+                      >
+                        {BMI_PHCS_SPECS[lvl].shortLabel}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* AFI Major Medical */}
+                <div className="p-2.5 rounded-2xl border border-blue-300 bg-blue-50/60 text-blue-950 flex flex-col justify-between gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addAfiPlan('copay3500')}
+                    className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                  >
+                    <span className="font-black text-xs">+ AFI Major Medical</span>
+                    <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                  </button>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => addAfiPlan('hsa3500')}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-blue-600 hover:text-white border border-blue-200 text-[10px] font-black transition cursor-pointer text-center"
+                    >
+                      3500 HSA
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addAfiPlan('copay3500')}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-blue-600 hover:text-white border border-blue-200 text-[10px] font-black transition cursor-pointer text-center"
+                    >
+                      3500 Copay
+                    </button>
+                  </div>
+                </div>
+
+                {/* ACUSA Vault Health Plan */}
+                <div className="p-2.5 rounded-2xl border border-orange-300 bg-orange-50/60 text-orange-950 flex flex-col justify-between gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => addAcusaPlan('silver2')}
+                    className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                  >
+                    <span className="font-black text-xs">+ ACUSA Vault (GI)</span>
+                    <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                  </button>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => addAcusaPlan('bronze2')}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-orange-600 hover:text-white border border-orange-200 text-[10px] font-black transition cursor-pointer text-center"
+                    >
+                      Bronze 2
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addAcusaPlan('silver2')}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-orange-600 hover:text-white border border-orange-200 text-[10px] font-black transition cursor-pointer text-center"
+                    >
+                      Silver 2
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Acción Rápida de Paquete Combinado (Sanitas + HospitalWise) */}
@@ -2243,7 +2890,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 {hasCombinedPackage ? (
                   <span className="px-2.5 py-1 rounded-lg bg-cyan-50 border border-cyan-200 text-[#005b9f] font-black">
                     Paquete Combinado ({combinedPlans.length}): ${formatMoney(combinedMonthlyTotal)}/mes
-                    {combinedSanitasFee > 0 && ` • 1.er Mes $${formatMoney(combinedFirstMonthTotal)}`}
+                    {combinedEnrollmentFee > 0 && ` • 1.er Mes $${formatMoney(combinedFirstMonthTotal)}`}
                   </span>
                 ) : (
                   <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold text-[11px]">
@@ -2262,13 +2909,49 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
               <div className="space-y-4">
                 {plans.map((plan, index) => {
                   const sanitasFee = getPlanSanitasFee(plan);
+                  const enrollmentFeeInfo = getPlanEnrollmentFee(plan);
                   const firstMonthVal = getPlanFirstMonth(plan);
                   const isMedMax = isMedMaxPlan(plan);
                   const isHpg = isHpgPlan(plan);
+                  const isAhw = isAhwPlan(plan);
+                  const isMedAccess = isMedAccessPlan(plan);
+                  const isBmiPhcs = isBmiPhcsPlan(plan);
+                  const isAfi = isAfiPlan(plan);
+                  const isAcusa = isAcusaPlan(plan);
                   const isSanitas = isSanitasPlan(plan) && !isHospitalWisePlan(plan);
                   const isHospitalWise = isHospitalWisePlan(plan);
                   const currentHpgLevel: HpgPlanLevel =
                     plan.hpgLevel || detectHpgLevelFromText(`${plan.planName} ${plan.tier}`);
+
+                  const currentMedMaxAge: MedMaxAgeBracket =
+                    plan.medmaxAgeBracket || detectMedMaxAgeBracket(clientAges);
+                  const currentMedMaxFam: EnrollFamilyTier =
+                    plan.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+                  const currentMedMaxScope: MedMaxScope =
+                    plan.medmaxScope || (currentMedMaxFam === 'empleado' ? 'individual' : 'familiar');
+                  const currentMedMaxDedTier: MedMaxDeductibleTier =
+                    plan.medmaxDeductibleTier || 750;
+                  const medmaxDedCheck = isMedMax
+                    ? validateMedMaxDeductible(plan.deductible, currentMedMaxScope)
+                    : { isValid: true, reason: '', closestTier: 750 as MedMaxDeductibleTier };
+
+                  const currentAhwLevel: AhwPlanLevel =
+                    plan.ahwLevel || detectAhwLevelFromText(`${plan.planName} ${plan.tier}`);
+                  const currentMedAccessLevel: MedAccessLevel =
+                    plan.medaccessLevel || (plan.planName.toLowerCase().includes('basic') ? 'basic' : 'pro');
+                  const currentMedAccessAge: MedAccessAgeBracket =
+                    plan.medaccessAgeBracket || detectMedAccessAgeBracket(clientAges);
+                  const currentBmiLevel: BmiPhcsLevel =
+                    plan.bmiLevel ||
+                    (plan.planName.toLowerCase().includes('advantage')
+                      ? 'advantage'
+                      : plan.planName.toLowerCase().includes('basic')
+                        ? 'basic'
+                        : 'value');
+                  const currentAfiLevel: AfiLevel =
+                    plan.afiLevel || (plan.planName.toLowerCase().includes('hsa') ? 'hsa3500' : 'copay3500');
+                  const currentAcusaLevel: AcusaLevel =
+                    plan.acusaLevel || (plan.planName.toLowerCase().includes('bronze') ? 'bronze2' : 'silver2');
 
                   return (
                     <div
@@ -2297,11 +2980,15 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                             title="Ficha oficial del plan"
                           >
                             <option value="custom">Personalizado</option>
-                            <option value="medmax">MedMax (Ficha Oficial)</option>
+                            <option value="medmax">MedMax (ERISA)</option>
                             <option value="hpg4000">HPG 2000/4000/5000</option>
-                            <option value="ahw4">AHW 4 (First Health)</option>
+                            <option value="ahw4">AHW 1 al 6 (First Health)</option>
+                            <option value="medaccess">MedAccess MVP (Basic/Pro)</option>
+                            <option value="bmi_phcs">BMI-PHCS (Red PHCS)</option>
+                            <option value="afi">AFI Major Medical (3500)</option>
+                            <option value="acusa">ACUSA Vault (Bronze/Silver)</option>
                             <option value="sanitas">Sanitas Care Plus</option>
-                            <option value="hospitalwise">HospitalWise Bundle 1</option>
+                            <option value="hospitalwise">HospitalWise (Basic / Bundle 1 / 2)</option>
                             <option value="aca">Plan ACA (Obamacare)</option>
                           </select>
 
@@ -2326,6 +3013,35 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                         </div>
                       </div>
 
+                      {/* Selector Exacto HospitalWise (Basic / Bundle 1 / Bundle 2) */}
+                      {isHospitalWise && (() => {
+                        const currentHwLevel: HospitalWiseLevel =
+                          plan.hospitalwiseLevel || detectHospitalWiseLevelFromText(`${plan.planName} ${plan.tier}`);
+                        return (
+                          <div className="bg-cyan-50 p-2.5 rounded-xl border border-cyan-200 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-cyan-950">
+                              Nivel Oficial HospitalWise® (Golden Rule / UHC — Efectivo Directo):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(['basic', 'bundle1', 'bundle2'] as HospitalWiseLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => changeHospitalWiseLevel(plan.id, lvl)}
+                                  className={`px-3 py-1 rounded-lg text-[11px] font-black border transition cursor-pointer ${
+                                    currentHwLevel === lvl
+                                      ? 'bg-cyan-700 text-white border-cyan-800 shadow-xs'
+                                      : 'bg-white text-cyan-950 border-cyan-200 hover:bg-cyan-100'
+                                  }`}
+                                >
+                                  {HOSPITALWISE_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       {/* Selector Exacto de Nivel HPG (Select 2000 / Preferred 4000 / Premier 5000) */}
                       {isHpg && (
                         <div className="bg-sky-50 p-2.5 rounded-xl border border-sky-200 flex flex-wrap items-center justify-between gap-2">
@@ -2345,6 +3061,372 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                                 }`}
                               >
                                 {HPG_SPECS[lvl].shortLabel}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Configurador Exacto MedMax: Modalidad Ind/Fam, Edad, Categoría y Deducible Oficial */}
+                      {isMedMax && (
+                        <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-300 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-amber-950">
+                              Configuración Oficial MedMax (Edad + Deducible Individual/Familiar):
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-amber-900">Deducible:</span>
+                              {(['individual', 'familiar'] as MedMaxScope[]).map(sc => (
+                                <button
+                                  key={sc}
+                                  type="button"
+                                  onClick={() => updateMedMaxConfig(plan.id, { scope: sc })}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer transition ${
+                                    currentMedMaxScope === sc
+                                      ? 'bg-amber-700 text-white border-amber-800 shadow-xs'
+                                      : 'bg-white text-amber-900 border-amber-200 hover:bg-amber-100'
+                                  }`}
+                                >
+                                  {sc === 'individual' ? 'Individual ($9,200 MOOP)' : 'Familiar ($18,400 MOOP)'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <div>
+                              <span className="block text-[10px] font-bold text-amber-900 mb-1">
+                                Rango de Edad (auto-calcula tarifa mensual):
+                              </span>
+                              <div className="grid grid-cols-4 gap-1">
+                                {(['18-29', '30-44', '45-54', '55-64'] as MedMaxAgeBracket[]).map(age => (
+                                  <button
+                                    key={age}
+                                    type="button"
+                                    onClick={() => updateMedMaxConfig(plan.id, { ageBracket: age })}
+                                    className={`py-1 px-1.5 rounded-lg text-[10px] font-black border cursor-pointer transition ${
+                                      currentMedMaxAge === age
+                                        ? 'bg-slate-900 text-white border-slate-900'
+                                        : 'bg-white text-slate-700 border-amber-200 hover:bg-amber-100'
+                                    }`}
+                                  >
+                                    {age} años
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div>
+                              <span className="block text-[10px] font-bold text-amber-900 mb-1">
+                                Categoría de Tarifa MedMax:
+                              </span>
+                              <div className="grid grid-cols-4 gap-1">
+                                {[
+                                  { key: 'empleado' as EnrollFamilyTier, label: 'Empleado' },
+                                  { key: 'pareja' as EnrollFamilyTier, label: 'Emp.+Cóny.' },
+                                  { key: 'hijos' as EnrollFamilyTier, label: 'Emp.+Hijos' },
+                                  { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
+                                ].map(item => (
+                                  <button
+                                    key={item.key}
+                                    type="button"
+                                    onClick={() => updateMedMaxConfig(plan.id, { familyTier: item.key })}
+                                    className={`py-1 px-1 rounded-lg text-[10px] font-black border cursor-pointer transition ${
+                                      currentMedMaxFam === item.key
+                                        ? 'bg-[#005b9f] text-white border-[#005b9f]'
+                                        : 'bg-white text-slate-700 border-amber-200 hover:bg-amber-100'
+                                    }`}
+                                  >
+                                    {item.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="block text-[10px] font-bold text-amber-900 mb-1">
+                              Opciones Oficiales de Deducible ({currentMedMaxScope === 'individual' ? 'Individual' : 'Familiar'}):
+                            </span>
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+                              {MEDMAX_DEDUCTIBLE_OPTIONS.map(opt => {
+                                const priceForOpt = getMedMaxQuotePricing(
+                                  currentMedMaxAge,
+                                  currentMedMaxFam,
+                                  opt.tier
+                                ).monthlyPrice;
+                                const isActive = currentMedMaxDedTier === opt.tier;
+                                return (
+                                  <button
+                                    key={opt.tier}
+                                    type="button"
+                                    onClick={() => updateMedMaxConfig(plan.id, { deductibleTier: opt.tier })}
+                                    className={`py-1.5 px-2 rounded-lg text-[10px] font-black border cursor-pointer transition text-center ${
+                                      isActive
+                                        ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                                        : 'bg-white text-amber-950 border-amber-200 hover:bg-amber-100'
+                                    }`}
+                                  >
+                                    <span className="block">
+                                      {currentMedMaxScope === 'individual'
+                                        ? `${opt.indLabel} Ind.`
+                                        : `${opt.famLabel} Fam.`}
+                                    </span>
+                                    <span className={`text-[9px] font-bold ${isActive ? 'text-amber-100' : 'text-slate-500'}`}>
+                                      ${priceForOpt}/mes
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {!medmaxDedCheck.isValid && (
+                            <div className="bg-rose-50 border border-rose-300 rounded-lg px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-rose-900 font-bold">
+                              <span>⚠️ {medmaxDedCheck.reason}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateMedMaxConfig(plan.id, { deductibleTier: medmaxDedCheck.closestTier })
+                                }
+                                className="px-2 py-0.5 rounded bg-rose-600 text-white font-black text-[10px] cursor-pointer hover:bg-rose-700"
+                              >
+                                Corregir a Deducible Oficial
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Selector AHW 1 al 6 + Grupo Familiar */}
+                      {isAhw && (
+                        <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-indigo-900">
+                              Nivel AHW (1 al 6 • Red First Health):
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {(['ahw1', 'ahw2', 'ahw3', 'ahw4', 'ahw5', 'ahw6'] as AhwPlanLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updateAhwConfig(plan.id, { level: lvl })}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer transition ${
+                                    currentAhwLevel === lvl
+                                      ? 'bg-indigo-600 text-white border-indigo-700'
+                                      : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+                                  }`}
+                                >
+                                  {AHW_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold text-indigo-900">Tarifa Oficial por Grupo:</span>
+                            <div className="flex flex-wrap gap-1">
+                              {[
+                                { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
+                                { key: 'pareja' as EnrollFamilyTier, label: 'Pareja' },
+                                { key: 'hijos' as EnrollFamilyTier, label: 'Padre+Hijos' },
+                                { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
+                              ].map(opt => (
+                                <button
+                                  key={opt.key}
+                                  type="button"
+                                  onClick={() => updateAhwConfig(plan.id, { familyTier: opt.key })}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                    currentMedMaxFam === opt.key
+                                      ? 'bg-slate-900 text-white border-slate-900'
+                                      : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+                                  }`}
+                                >
+                                  {opt.label} (${AHW_SPECS[currentAhwLevel].rates[opt.key].toFixed(2)})
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Selector MedAccess MVP (Basic/Pro + Edad 18-45 / 46-64 + Familia) */}
+                      {isMedAccess && (
+                        <div className="bg-violet-50/70 p-2.5 rounded-xl border border-violet-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-black uppercase text-violet-950">MedAccess MVP:</span>
+                              {(['basic', 'pro'] as MedAccessLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updateMedAccessConfig(plan.id, { level: lvl })}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentMedAccessLevel === lvl
+                                      ? 'bg-violet-700 text-white border-violet-800'
+                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
+                                  }`}
+                                >
+                                  {MEDACCESS_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-violet-900">Edad:</span>
+                              {(['18-45', '46-64'] as MedAccessAgeBracket[]).map(age => (
+                                <button
+                                  key={age}
+                                  type="button"
+                                  onClick={() => updateMedAccessConfig(plan.id, { ageBracket: age })}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentMedAccessAge === age
+                                      ? 'bg-slate-900 text-white border-slate-900'
+                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
+                                  }`}
+                                >
+                                  {age} años
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { key: 'empleado' as EnrollFamilyTier, label: 'Empleado' },
+                              { key: 'pareja' as EnrollFamilyTier, label: 'Emp.+Pareja' },
+                              { key: 'hijos' as EnrollFamilyTier, label: 'Emp.+Hijos' },
+                              { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
+                            ].map(opt => (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => updateMedAccessConfig(plan.id, { familyTier: opt.key })}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                  currentMedMaxFam === opt.key
+                                    ? 'bg-violet-600 text-white border-violet-700'
+                                    : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
+                                }`}
+                              >
+                                {opt.label} (${MEDACCESS_SPECS[currentMedAccessLevel].rates[currentMedAccessAge][opt.key].toFixed(2)})
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Selector BMI-PHCS */}
+                      {isBmiPhcs && (
+                        <div className="bg-teal-50/70 p-2.5 rounded-xl border border-teal-200 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[10px] font-black uppercase text-teal-950">
+                            Nivel BMI-PHCS (Red PHCS • Beneficio Limitado por Día):
+                          </span>
+                          <div className="flex gap-1.5">
+                            {(['basic', 'value', 'advantage'] as BmiPhcsLevel[]).map(lvl => (
+                              <button
+                                key={lvl}
+                                type="button"
+                                onClick={() => changeBmiLevel(plan.id, lvl)}
+                                className={`px-3 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                  currentBmiLevel === lvl
+                                    ? 'bg-teal-700 text-white border-teal-800'
+                                    : 'bg-white text-teal-900 border-teal-200 hover:bg-teal-100'
+                                }`}
+                              >
+                                {BMI_PHCS_SPECS[lvl].shortLabel}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Selector AFI Major Medical */}
+                      {isAfi && (
+                        <div className="bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-blue-950">
+                              AFI Major Medical (Deducible $3,500/$7,000 + $75 Solicitud):
+                            </span>
+                            <div className="flex gap-1.5">
+                              {(['hsa3500', 'copay3500'] as AfiLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updateAfiConfig(plan.id, { level: lvl })}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentAfiLevel === lvl
+                                      ? 'bg-blue-700 text-white border-blue-800'
+                                      : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-100'
+                                  }`}
+                                >
+                                  {AFI_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
+                              { key: 'pareja' as EnrollFamilyTier, label: 'Titular+Cónyuge' },
+                              { key: 'hijos' as EnrollFamilyTier, label: 'Titular+Hijo(s)' },
+                              { key: 'familiar' as EnrollFamilyTier, label: 'Familia Completa' }
+                            ].map(opt => (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => updateAfiConfig(plan.id, { familyTier: opt.key })}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                  currentMedMaxFam === opt.key
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-blue-900 border-blue-200 hover:bg-blue-100'
+                                }`}
+                              >
+                                {opt.label} (${AFI_SPECS[currentAfiLevel].rates[opt.key].toFixed(2)})
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Selector ACUSA Vault Health Plan */}
+                      {isAcusa && (
+                        <div className="bg-orange-50/70 p-2.5 rounded-xl border border-orange-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-orange-950">
+                              ACUSA • Vault Health Plan (Guaranteed Issue + $75 App Fee):
+                            </span>
+                            <div className="flex gap-1.5">
+                              {(['bronze2', 'silver2'] as AcusaLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updateAcusaConfig(plan.id, { level: lvl })}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentAcusaLevel === lvl
+                                      ? 'bg-orange-600 text-white border-orange-700'
+                                      : 'bg-white text-orange-900 border-orange-200 hover:bg-orange-100'
+                                  }`}
+                                >
+                                  {ACUSA_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
+                              { key: 'pareja' as EnrollFamilyTier, label: 'Cónyuge' },
+                              { key: 'hijos' as EnrollFamilyTier, label: 'Hijo(s)' },
+                              { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
+                            ].map(opt => (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => updateAcusaConfig(plan.id, { familyTier: opt.key })}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                  currentMedMaxFam === opt.key
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-orange-900 border-orange-200 hover:bg-orange-100'
+                                }`}
+                              >
+                                {opt.label} (${ACUSA_SPECS[currentAcusaLevel].rates[opt.key].toFixed(2)})
                               </button>
                             ))}
                           </div>
@@ -2402,33 +3484,19 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                                 isMedMax ? 'text-amber-800 font-black' : 'text-slate-500'
                               }`}
                             >
-                              {isMedMax ? 'Deducible Anual MedMax *' : 'Deducible Anual'}
+                              {isMedMax ? 'Deducible Anual MedMax (Ind/Fam) *' : 'Deducible Anual'}
                             </label>
-                            {isMedMax && (
-                              <div className="flex gap-1">
-                                {['$750', '$1,500', '$3,000'].map(d => (
-                                  <button
-                                    key={d}
-                                    type="button"
-                                    onClick={() => updatePlan(plan.id, 'deductible', d)}
-                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black border cursor-pointer ${
-                                      plan.deductible === d
-                                        ? 'bg-amber-600 text-white border-amber-700'
-                                        : 'bg-white text-amber-900 border-amber-200'
-                                    }`}
-                                  >
-                                    {d}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
                           </div>
                           <input
                             type="text"
                             value={plan.deductible}
                             onChange={e => updatePlan(plan.id, 'deductible', e.target.value)}
                             className={`w-full px-2.5 py-1.5 text-xs bg-white rounded-lg font-bold ${
-                              isMedMax ? 'border-2 border-amber-400 text-amber-950' : 'border border-slate-200'
+                              isMedMax
+                                ? medmaxDedCheck.isValid
+                                  ? 'border-2 border-amber-400 text-amber-950'
+                                  : 'border-2 border-rose-500 text-rose-900'
+                                : 'border border-slate-200'
                             }`}
                           />
                         </div>
@@ -2633,7 +3701,24 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                             </label>
                           )}
 
-                          {sanitasFee > 0 && (
+                          {(isAfi || isAcusa) && (
+                            <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-blue-800">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(plan.hasEnrollmentFee)}
+                                onChange={e => {
+                                  updatePlan(plan.id, 'hasEnrollmentFee', e.target.checked);
+                                  if (e.target.checked && !plan.enrollmentFee) {
+                                    updatePlan(plan.id, 'enrollmentFee', '75.00');
+                                  }
+                                }}
+                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                              />
+                              <span>Cargo Único Solicitud (+$75.00 en 1.er Mes)</span>
+                            </label>
+                          )}
+
+                          {enrollmentFeeInfo.amount > 0 && (
                             <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-900 font-black text-[11px] tabular-nums">
                               1.er Mes Plan: ${formatMoney(firstMonthVal)}
                             </span>

@@ -126,10 +126,25 @@ export type QuotePlanCategory =
   | 'sanitas'
   | 'hospitalwise'
   | 'sanitas_bundle'
+  | 'medaccess'
+  | 'bmi_phcs'
+  | 'afi'
+  | 'acusa'
   | 'aca'
   | 'custom';
 
 export type HpgPlanLevel = 'select2000' | 'preferred4000' | 'premier5000';
+export type HospitalWiseLevel = 'basic' | 'bundle1' | 'bundle2';
+export type AhwPlanLevel = 'ahw1' | 'ahw2' | 'ahw3' | 'ahw4' | 'ahw5' | 'ahw6';
+export type MedMaxDeductibleTier = 250 | 500 | 750 | 1000 | 1500;
+export type MedMaxAgeBracket = '18-29' | '30-44' | '45-54' | '55-64';
+export type MedMaxScope = 'individual' | 'familiar';
+export type EnrollFamilyTier = 'empleado' | 'pareja' | 'hijos' | 'familiar';
+export type MedAccessLevel = 'basic' | 'pro';
+export type MedAccessAgeBracket = '18-45' | '46-64';
+export type BmiPhcsLevel = 'basic' | 'value' | 'advantage';
+export type AfiLevel = 'hsa3500' | 'copay3500';
+export type AcusaLevel = 'bronze2' | 'silver2';
 
 export interface QuotePlan {
   id: string;
@@ -150,9 +165,22 @@ export interface QuotePlan {
   // Campos opcionales retrocompatibles para catálogo oficial Agente Contigo
   planCategory?: QuotePlanCategory;
   hpgLevel?: HpgPlanLevel;
+  hospitalwiseLevel?: HospitalWiseLevel;
+  ahwLevel?: AhwPlanLevel;
+  medmaxDeductibleTier?: MedMaxDeductibleTier;
+  medmaxScope?: MedMaxScope;
+  medmaxAgeBracket?: MedMaxAgeBracket;
+  medmaxFamilyTier?: EnrollFamilyTier;
+  medaccessLevel?: MedAccessLevel;
+  medaccessAgeBracket?: MedAccessAgeBracket;
+  bmiLevel?: BmiPhcsLevel;
+  afiLevel?: AfiLevel;
+  acusaLevel?: AcusaLevel;
   subtitleTag?: string;
   enrollmentFee?: string;
+  enrollmentFeeLabel?: string;
   hasSanitasFee?: boolean;
+  hasEnrollmentFee?: boolean;
   subsidyAmount?: string;
   planIdCode?: string;
   referralRequired?: string;
