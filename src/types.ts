@@ -123,6 +123,8 @@ export type QuotePlanCategory =
   | 'medmax'
   | 'hpg4000'
   | 'ahw4'
+  | 'sanitas'
+  | 'hospitalwise'
   | 'sanitas_bundle'
   | 'aca'
   | 'custom';
@@ -158,6 +160,7 @@ export interface SavedQuote {
   clientName: string;
   location: string;
   members: string;
+  ages?: string;
   year: string;
   agentName: string;
   plans: QuotePlan[];
