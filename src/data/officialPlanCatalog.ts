@@ -144,20 +144,20 @@ export const MEDMAX_RATE_TABLE: Record<
   },
   '30-44': {
     empleado: { 250: 439, 500: 409, 750: 389, 1000: 369, 1500: 339 },
-    pareja: { 250: 999, 500: 969, 750: 939, 1000: 909, 1500: 889 },
-    hijos: { 250: 999, 500: 969, 750: 939, 1000: 909, 1500: 889 },
+    pareja: { 250: 759, 500: 709, 750: 679, 1000: 659, 1500: 639 },
+    hijos: { 250: 739, 500: 699, 750: 669, 1000: 649, 1500: 623 },
     familiar: { 250: 999, 500: 969, 750: 939, 1000: 909, 1500: 889 }
   },
   '45-54': {
     empleado: { 250: 469, 500: 439, 750: 419, 1000: 399, 1500: 379 },
-    pareja: { 250: 1049, 500: 1019, 750: 999, 1000: 979, 1500: 959 },
-    hijos: { 250: 1049, 500: 1019, 750: 999, 1000: 979, 1500: 959 },
+    pareja: { 250: 769, 500: 749, 750: 719, 1000: 699, 1500: 689 },
+    hijos: { 250: 759, 500: 739, 750: 709, 1000: 689, 1500: 669 },
     familiar: { 250: 1049, 500: 1019, 750: 999, 1000: 979, 1500: 959 }
   },
   '55-64': {
     empleado: { 250: 519, 500: 489, 750: 469, 1000: 449, 1500: 429 },
-    pareja: { 250: 1079, 500: 1059, 750: 1019, 1000: 999, 1500: 979 },
-    hijos: { 250: 1079, 500: 1059, 750: 1019, 1000: 999, 1500: 979 },
+    pareja: { 250: 789, 500: 769, 750: 749, 1000: 729, 1500: 719 },
+    hijos: { 250: 769, 500: 749, 750: 729, 1000: 719, 1500: 679 },
     familiar: { 250: 1079, 500: 1059, 750: 1019, 1000: 999, 1500: 979 }
   }
 };
@@ -234,9 +234,9 @@ export const validateMedMaxDeductible = (
 };
 
 export const MEDMAX_OFFICIAL_BULLETS: string[] = [
-  '1. Servicios NO Sujetos a Deducible ($0 Inmediato): Cuidado preventivo y Telemedicina 24/7 (RelyMD: consultas virtuales primarias, urgencias virtuales y salud mental) a $0 copago, más medicamentos genéricos preventivos a $0. Incluye Red Nacional First Health PPO y Bill Negotiator.',
+  '1. Servicios NO Sujetos a Deducible ($0 Inmediato): Cuidado preventivo y Telemedicina 24/7 (RelyMD: consultas virtuales primarias, urgencias virtuales y salud mental) a $0 copago, más medicamentos genéricos preventivos a $0 (genéricos estándar tras deducible). Incluye Red Nacional First Health PPO y Med Defender Pro (Bill Negotiator + Patient Assistance Program).',
   '2. Servicios Ambulatorios y Diagnóstico (Tras Cumplir Deducible): Médico primario, especialista y urgencias a $50/$50/$50 (máx. 10 visitas combinadas/año; quiropráctico hasta 12 visitas/año). Laboratorio simple a $25 y radiología simple a $50 en centros no hospitalarios (límite 3/año). Imágenes avanzadas (MRI, CT, PET) a $200 copago (requiere autorización médica previa).',
-  '3. Emergencias, Hospitalización y Cirugías (Tras Cumplir Deducible): Sala de Emergencias (ER) / ambulancia a $250 copago (2 admisiones por enfermedad, 2 por accidente y 2 transportes/año). Cirugía en consultorio y ambulatoria a $250 copago (hasta 3/año; incluye cirujano, anestesia y gastos de sala; no electivas). Hospitalización y cirugía internado a $1,000 copago (hasta 2 admisiones/año, máx. 10 días por internación; 2 cirugías con internación cubiertas). Maternidad: parto vaginal $250 / cesárea $500 (espera 12 meses; prenatal/postnatal y labs 100% cubiertos). Quimioterapia/Radioterapia $100 (10 visitas comb.), Terapias físicas/ocupacionales $50 (16 visitas), Salud mental $50 (15 días).'
+  '3. Emergencias, Hospitalización, Cirugías y Otros Servicios (Tras Cumplir Deducible): Sala de Emergencias (ER) / ambulancia a $250 copago (2 admisiones por enfermedad, 2 por accidente y 2 transportes/año). Cirugía en consultorio y ambulatoria a $250 copago (hasta 3/año; incluye cirujano, anestesia y gastos de sala; no electivas). Hospitalización y cirugía internado a $1,000 copago (hasta 2 admisiones/año, máx. 10 días por internación; 2 cirugías con internación cubiertas). Maternidad: parto vaginal $250 / cesárea $500 (espera 12 meses; prenatal/postnatal y labs 100% cubiertos). Infusiones/Quimio/Radioterapia $100 (10 visitas comb.), Terapias (física, ocupacional, habla, cardíaca) $50 (16 visitas comb.), Cuidado en casa/Enfermería especializada $50 (10 días c/u), DME $50 (5 artículos/año), Salud mental ambulatorio $50 / internado $250 (15 días/año).'
 ];
 
 // ============================================================
@@ -981,11 +981,12 @@ export const enforceOfficialCatalogOnPlan = (
   const famTier = detectEnrollFamilyTier(context?.members || '', context?.ages || '');
 
   if (isMedMaxPlan(plan)) {
-    const scope: MedMaxScope = plan.medmaxScope || (famTier === 'empleado' ? 'individual' : 'familiar');
+    const effectiveFamTier: EnrollFamilyTier = plan.medmaxFamilyTier || famTier;
+    const scope: MedMaxScope = plan.medmaxScope || (effectiveFamTier === 'empleado' ? 'individual' : 'familiar');
     const ageBracket: MedMaxAgeBracket = plan.medmaxAgeBracket || detectMedMaxAgeBracket(context?.ages || '');
     const checkDed = validateMedMaxDeductible(plan.deductible || '', scope);
     const dedTier: MedMaxDeductibleTier = plan.medmaxDeductibleTier || checkDed.closestTier;
-    const pricing = getMedMaxQuotePricing(ageBracket, famTier, dedTier);
+    const pricing = getMedMaxQuotePricing(ageBracket, effectiveFamTier, dedTier);
 
     return {
       ...plan,
@@ -993,7 +994,7 @@ export const enforceOfficialCatalogOnPlan = (
       medmaxDeductibleTier: dedTier,
       medmaxScope: scope,
       medmaxAgeBracket: ageBracket,
-      medmaxFamilyTier: plan.medmaxFamilyTier || famTier,
+      medmaxFamilyTier: effectiveFamTier,
       company: 'MedMax (Plan ERISA)',
       planName: 'Plan MedMax',
       tier: `Deductible Value Plan • Edad ${ageBracket} años`,
