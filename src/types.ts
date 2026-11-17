@@ -161,6 +161,7 @@ export interface QuotePlan {
   acaRxTiers?: string;
   deductibleWarning?: string;
   highlights?: string[];
+  includeInCombinedTotal?: boolean;
 }
 
 export interface SavedQuote {

@@ -493,6 +493,104 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     setPlans(prev => prev.filter(p => p.id !== id));
   };
 
+  // Combinar / Descombinar Sanitas Care + HospitalWise Bundle 1 en cualquier momento
+  const combineSanitasAndHospitalWise = () => {
+    const existingSanitas = plans.find(p => isSanitasPlan(p) && !isHospitalWisePlan(p));
+    const existingHw = plans.find(p => isHospitalWisePlan(p));
+    const bothCombinedNow =
+      Boolean(existingSanitas?.includeInCombinedTotal) && Boolean(existingHw?.includeInCombinedTotal);
+
+    if (existingSanitas && existingHw) {
+      const targetState = !bothCombinedNow;
+      setPlans(prev =>
+        prev.map(p =>
+          p.id === existingSanitas.id || p.id === existingHw.id
+            ? { ...p, includeInCombinedTotal: targetState }
+            : p
+        )
+      );
+      onShowToast(
+        targetState ? '¡Sanitas + HospitalWise Combinados!' : 'Combinación Desactivada',
+        targetState
+          ? 'Ahora se sumarán juntos como Paquete Combinado en el PDF, Correo y mensajes (los demás planes no se suman).'
+          : 'Sanitas Care y HospitalWise se mostrarán como opciones independientes sin sumarse.',
+        targetState ? 'success' : 'info'
+      );
+      return;
+    }
+
+    const pricing = getSanitasPricingForFamily(clientMembers, clientAges);
+    const sanitasId = existingSanitas?.id || 'plan_sanitas_' + Date.now();
+    const hwId = existingHw?.id || 'plan_hospitalwise_' + (Date.now() + 1);
+
+    const newSanitas: QuotePlan = {
+      id: sanitasId,
+      tag: 'SANITAS CARE PLUS (PAQUETE COMBINADO)',
+      planCategory: 'sanitas',
+      company: 'Sanitas Care Plus',
+      planName: `Sanitas Care Plus (${pricing.tierLabel})`,
+      tier: 'Membresía de Atención Primaria y Bienestar',
+      subtitleTag: `SANITAS CARE PLUS (${pricing.tierLabel.toUpperCase()}) • +$40.00 FEE ÚNICO SOLO 1.ER MES`,
+      premium: pricing.monthlyPrice,
+      hasSanitasFee: true,
+      enrollmentFee: '40.00',
+      deductible: '$0 (Sin deducibles ni copagos)',
+      moop: '$0 Deducible • Sin copagos en servicios incluidos',
+      primaryCare: '$0 Ilimitado (Presencial y Virtual en +50 centros FL)',
+      specialist: '10% a 40% de descuento en especialistas',
+      genericRx: 'Desde $5 (suministro 30 días)',
+      urgencies: '2 visitas/año $0 (centros Sanitas sur de FL)',
+      highlights: SANITAS_OFFICIAL_BULLETS,
+      extraBenefit: 'Fee único de inscripción $40.00 sumado automáticamente al 1.er mes.',
+      clientSummary: `Sanitas Care Plus (${pricing.tierLabel}): $${pricing.monthlyPrice}/mes (1.er mes $${pricing.firstMonthPrice} con fee único de $40.00).`,
+      isRecommended: false,
+      includeInCombinedTotal: true
+    };
+
+    const newHw: QuotePlan = {
+      id: hwId,
+      tag: 'HOSPITALWISE BUNDLE 1 (PAQUETE COMBINADO)',
+      planCategory: 'hospitalwise',
+      company: 'Golden Rule Insurance Company',
+      planName: 'HospitalWise® Bundle 1',
+      tier: 'Indemnización Hospitalaria en Efectivo',
+      subtitleTag: 'GOLDEN RULE INSURANCE COMPANY • RESPALDO HOSPITALARIO EN EFECTIVO',
+      premium: '',
+      hasSanitasFee: false,
+      deductible: '$0 (Sin deducible)',
+      moop: 'Hospital/UCI $1,000/día (máx. 10 días) • Observación $1,000/día (máx. 4 días/año)',
+      primaryCare: '$100/día consultorio (máx. 4 días/año)',
+      specialist: '$100/día médico',
+      genericRx: 'No aplica',
+      urgencies: 'ER $500/día • UC $250/día',
+      highlights: HOSPITALWISE_OFFICIAL_BULLETS,
+      extraBenefit: 'Beneficios en efectivo por hospitalización, observación, UCI, ER, UC, cirugía y ambulancia.',
+      clientSummary: 'HospitalWise Bundle 1 de Golden Rule Insurance Company.',
+      isRecommended: false,
+      includeInCombinedTotal: true
+    };
+
+    setPlans(prev => {
+      const updated = prev.map(p =>
+        p.id === existingSanitas?.id || p.id === existingHw?.id
+          ? { ...p, includeInCombinedTotal: true }
+          : p
+      );
+      if (!existingSanitas) updated.push(newSanitas);
+      if (!existingHw) updated.push(newHw);
+      return updated;
+    });
+
+    setLastAddedPlanId(!existingHw ? hwId : sanitasId);
+    onShowToast(
+      '¡Paquete Sanitas + HospitalWise Combinado!',
+      !existingHw
+        ? 'Se sumarán ambos en el Total Paquete Combinado. Ingresa la prima mensual de HospitalWise.'
+        : 'Se agregó Sanitas Care y quedó combinado con HospitalWise.',
+      'success'
+    );
+  };
+
   // Cambiar nivel exacto de HPG (Select 2000 / Preferred 4000 / Premier 5000) con ficha cerrada exacta
   const changeHpgLevel = (id: string, level: HpgPlanLevel) => {
     const spec = HPG_SPECS[level];
@@ -941,8 +1039,11 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     const hasMedMax = plans.some(p => isMedMaxPlan(p));
     const hasSanitas = plans.some(p => getPlanSanitasFee(p) > 0);
     const hasHPGOrHW = plans.some(p => isHpgPlan(p) || isHospitalWisePlan(p));
-    const totalReg = plans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
-    const totalFirst = plans.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
+    const combinedList = plans.filter(p => Boolean(p.includeInCombinedTotal));
+    const hasCombined = combinedList.length >= 2;
+    const combinedReg = combinedList.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+    const combinedFee = combinedList.reduce((acc, p) => acc + getPlanSanitasFee(p), 0);
+    const combinedFirst = combinedReg + combinedFee;
     const agesSegment = clientAges ? ` • Edades: ${clientAges}` : '';
 
     const subject =
@@ -1021,8 +1122,9 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       const fee = getPlanSanitasFee(p);
       const firstM = getPlanFirstMonth(p);
       const bullets = getExactOfficialBulletsForPlan(p);
+      const isPartOfBundle = hasCombined && Boolean(p.includeInCombinedTotal);
 
-      lines.push(`OPCIÓN ${idx + 1}: ${p.planName} (${p.company})`);
+      lines.push(`OPCIÓN ${idx + 1}: ${p.planName} (${p.company})${isPartOfBundle ? ' [PARTE DEL PAQUETE COMBINADO]' : ''}`);
       lines.push(`• Mensualidad Regular: $${formatMoney(reg)}/mes${p.planCategory === 'aca' && p.subsidyAmount ? ` (Crédito fiscal / ahorro mensual: ${p.subsidyAmount})` : ''}`);
       if (fee > 0) {
         lines.push(`• Inversión 1.er Mes: $${formatMoney(firstM)} (incluye +$${formatMoney(fee)} fee único de inscripción de Sanitas Care)`);
@@ -1039,13 +1141,13 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       lines.push('');
     });
 
-    if (plans.length > 1 || hasSanitas) {
+    if (hasCombined) {
       lines.push(`--------------------------------------------------`);
-      lines.push(`CUADRO RESUMEN DE INVERSIÓN:`);
-      if (hasSanitas) {
-        lines.push(`• Total 1.er Mes (con +$${formatMoney(totalFirst - totalReg)} fee único de inscripción Sanitas): $${formatMoney(totalFirst)}`);
+      lines.push(`TOTAL PAQUETE COMBINADO (${combinedList.map(p => p.planName).join(' + ')}):`);
+      if (combinedFee > 0) {
+        lines.push(`• Total 1.er Mes Combinado (incluye +$${formatMoney(combinedFee)} fee único de inscripción Sanitas): $${formatMoney(combinedFirst)}`);
       }
-      lines.push(`• Total Mensual Regular: $${formatMoney(totalReg)}/mes`);
+      lines.push(`• Total Mensual Regular Combinado: $${formatMoney(combinedReg)}/mes`);
       lines.push(`--------------------------------------------------`);
       lines.push('');
     }
@@ -1086,13 +1188,16 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
 
   // Mensaje SMS Resumido
   const copyShortTextMessage = () => {
+    const combinedList = plans.filter(p => Boolean(p.includeInCombinedTotal));
+    const hasCombined = combinedList.length >= 2;
     let msg = `Hola ${clientName}, te saluda ${agentName || 'tu asesor'} de Agente Contigo.\n`;
     msg += `Cotización ${quoteYear} para ${clientLocation}${clientAges ? ` (Edades: ${clientAges})` : ''}:\n\n`;
 
     plans.forEach((plan, i) => {
       const fee = getPlanSanitasFee(plan);
       const firstM = getPlanFirstMonth(plan);
-      msg += `Opción ${i + 1}: ${plan.planName}\n`;
+      const isPartOfBundle = hasCombined && Boolean(plan.includeInCombinedTotal);
+      msg += `Opción ${i + 1}: ${plan.planName}${isPartOfBundle ? ' (Combinado)' : ''}\n`;
       msg += `• Mensualidad: $${formatMoney(parseMoney(plan.premium))}/mes`;
       if (fee > 0) msg += ` (1.er mes: $${formatMoney(firstM)} con fee Sanitas $${formatMoney(fee)})`;
       msg += `\n`;
@@ -1103,11 +1208,12 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       msg += `\n`;
     });
 
-    const total = plans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
-    const totalFirst = plans.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
-    if (plans.length > 1 || totalFirst > total) {
-      if (totalFirst > total) msg += `Total 1.er mes: $${formatMoney(totalFirst)}\n`;
-      msg += `Mensualidad regular: $${formatMoney(total)}/mes\n\n`;
+    if (hasCombined) {
+      const combReg = combinedList.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+      const combFirst = combinedList.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
+      msg += `Total Paquete Combinado (${combinedList.map(p => p.planName).join(' + ')}):\n`;
+      if (combFirst > combReg) msg += `• 1.er mes: $${formatMoney(combFirst)}\n`;
+      msg += `• Mensualidad regular: $${formatMoney(combReg)}/mes\n\n`;
     }
 
     msg += `Te envié el PDF oficial con todo el detalle y cuadro comparativo. ¿Cuál opción revisamos hoy?`;
@@ -1117,6 +1223,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
 
   // WhatsApp Message Generator (sin repeticiones, datos exactos)
   const copyWhatsAppMessage = () => {
+    const combinedList = plans.filter(p => Boolean(p.includeInCombinedTotal));
+    const hasCombined = combinedList.length >= 2;
     let msg = `🏥 *COTIZACIÓN OFICIAL DE SALUD ${quoteYear} — AGENTE CONTIGO*\n`;
     msg += `👋 ¡Hola ${clientName}! Te comparto tus opciones para ${clientMembers}${clientAges ? ` (Edades: ${clientAges})` : ''} en ${clientLocation}:\n\n`;
 
@@ -1124,7 +1232,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       const fee = getPlanSanitasFee(plan);
       const firstM = getPlanFirstMonth(plan);
       const bullets = getExactOfficialBulletsForPlan(plan);
-      msg += `📌 *OPCIÓN ${i + 1}: ${plan.planName}*\n`;
+      const isPartOfBundle = hasCombined && Boolean(plan.includeInCombinedTotal);
+      msg += `📌 *OPCIÓN ${i + 1}: ${plan.planName}*${isPartOfBundle ? ' _(Paquete Combinado)_' : ''}\n`;
       msg += `• 💰 *Mensualidad Regular:* $${formatMoney(parseMoney(plan.premium))}/mes\n`;
       if (fee > 0) {
         msg += `• 🧾 *1.er Mes (incluye fee único Sanitas +$${formatMoney(fee)}):* $${formatMoney(firstM)}\n`;
@@ -1142,11 +1251,12 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       msg += `\n`;
     });
 
-    const total = plans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
-    const totalFirst = plans.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
-    if (plans.length > 1 || totalFirst > total) {
-      if (totalFirst > total) msg += `🧾 *Total 1.er Mes:* $${formatMoney(totalFirst)}\n`;
-      msg += `💵 *Total Mensual Regular:* $${formatMoney(total)}/mes\n\n`;
+    if (hasCombined) {
+      const combReg = combinedList.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+      const combFirst = combinedList.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
+      msg += `📦 *TOTAL PAQUETE COMBINADO (${combinedList.map(p => p.planName).join(' + ')}):*\n`;
+      if (combFirst > combReg) msg += `🧾 *Total 1.er Mes Combinado:* $${formatMoney(combFirst)}\n`;
+      msg += `💵 *Total Mensual Combinado:* $${formatMoney(combReg)}/mes\n\n`;
     }
 
     msg += `📲 ¿Cuál de estas opciones te gustaría revisar o activar hoy?`;
@@ -1156,7 +1266,11 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
 
   // Save Quote to Supabase and Local (INTACTO: mismas columnas y variables Supabase)
   const handleSaveQuote = async () => {
-    const total = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
+    const combinedList = plans.filter(p => Boolean(p.includeInCombinedTotal));
+    const total =
+      combinedList.length >= 2
+        ? combinedList.reduce((acc, p) => acc + parseMoney(p.premium), 0)
+        : parseMoney((plans.find(p => p.isRecommended) || plans[0])?.premium || 0);
     const newQuote: SavedQuote = {
       id: 'quote-' + Date.now(),
       clientName,
@@ -1260,9 +1374,18 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     onShowToast('Historial Vaciado', 'Se han borrado todas las cotizaciones de prueba.', 'info');
   };
 
-  const totalMonthly = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
-  const totalSanitasFee = plans.reduce((acc, p) => acc + getPlanSanitasFee(p), 0);
-  const totalFirstMonth = totalMonthly + totalSanitasFee;
+  const combinedPlans = plans.filter(p => Boolean(p.includeInCombinedTotal));
+  const hasCombinedPackage = combinedPlans.length >= 2;
+  const combinedMonthlyTotal = combinedPlans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+  const combinedSanitasFee = combinedPlans.reduce((acc, p) => acc + getPlanSanitasFee(p), 0);
+  const combinedFirstMonthTotal = combinedMonthlyTotal + combinedSanitasFee;
+  const hasSanitasInPlans = plans.some(p => isSanitasPlan(p) && !isHospitalWisePlan(p));
+  const hasHospitalWiseInPlans = plans.some(p => isHospitalWisePlan(p));
+  const areSanitasAndHospitalWiseCombined =
+    hasSanitasInPlans &&
+    hasHospitalWiseInPlans &&
+    plans.some(p => isSanitasPlan(p) && !isHospitalWisePlan(p) && Boolean(p.includeInCombinedTotal)) &&
+    plans.some(p => isHospitalWisePlan(p) && Boolean(p.includeInCombinedTotal));
 
   // ============================================================
   // DOCUMENTO OFICIAL PDF (LIMPIO, EJECUTIVO, CERO REPETICIONES)
@@ -1378,6 +1501,11 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                         ★ Opción Recomendada
                       </span>
                     )}
+                    {hasCombinedPackage && plan.includeInCombinedTotal && (
+                      <span className="px-2 py-0.5 rounded-md bg-cyan-100 text-[#005b9f] text-[10px] font-black uppercase tracking-wider">
+                        Paquete Combinado
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] font-extrabold uppercase tracking-wide text-[#008be3]">
                     {plan.subtitleTag || `${plan.company} • ${plan.tier}`}
@@ -1477,11 +1605,17 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                   const reg = parseMoney(plan.premium);
                   const fee = getPlanSanitasFee(plan);
                   const firstM = reg + fee;
+                  const isInCombined = hasCombinedPackage && Boolean(plan.includeInCombinedTotal);
                   return (
-                    <tr key={plan.id} className={plan.isRecommended ? 'bg-teal-50/40' : 'bg-white'}>
+                    <tr key={plan.id} className={plan.isRecommended ? 'bg-teal-50/40' : isInCombined ? 'bg-cyan-50/30' : 'bg-white'}>
                       <td className="py-2.5 px-3 font-bold text-slate-900">
                         Opción {idx + 1}: {plan.planName}
                         <span className="block text-[10px] font-semibold text-slate-500">{plan.company}</span>
+                        {isInCombined && (
+                          <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-cyan-100 text-[#005b9f] text-[9px] font-black uppercase">
+                            Incluido en Paquete Combinado
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-slate-600">
                         <span className="font-semibold text-slate-800">{plan.tier}</span>
@@ -1503,21 +1637,20 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                     </tr>
                   );
                 })}
-                {(plans.length > 1 || totalSanitasFee > 0) && (
-                  <tr className="bg-cyan-50/60 border-t-2 border-[#008be3]/40">
+                {hasCombinedPackage && (
+                  <tr className="bg-cyan-50/70 border-t-2 border-[#008be3]/50">
                     <td className="py-2.5 px-3 font-black text-[#005b9f]" colSpan={2}>
-                      Total Combinado Estimado ({plans.length} {plans.length === 1 ? 'plan' : 'planes'})
-                      {totalSanitasFee > 0 && (
-                        <span className="text-[11px] font-bold text-teal-700 ml-2">
-                          • Fee único inscripción Sanitas 1.er mes: +${formatMoney(totalSanitasFee)}
-                        </span>
-                      )}
+                      Total Paquete Combinado ({combinedPlans.length} planes)
+                      <span className="block text-[10px] font-bold text-slate-600 mt-0.5">
+                        {combinedPlans.map(p => p.planName).join(' + ')}
+                        {combinedSanitasFee > 0 && ` • Incluye +$${formatMoney(combinedSanitasFee)} fee único inscripción Sanitas 1.er mes`}
+                      </span>
                     </td>
                     <td className="py-2.5 px-3 text-right font-black text-[#005b9f] tabular-nums">
-                      ${formatMoney(totalFirstMonth)}
+                      ${formatMoney(combinedFirstMonthTotal)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-black text-slate-900 tabular-nums">
-                      ${formatMoney(totalMonthly)}/mes
+                      ${formatMoney(combinedMonthlyTotal)}/mes
                     </td>
                   </tr>
                 )}
@@ -2067,6 +2200,33 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 <span className="text-[10px] font-bold opacity-85">Con Subsidio + Día 1</span>
               </button>
             </div>
+
+            {/* Acción Rápida de Paquete Combinado (Sanitas + HospitalWise) */}
+            <div className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="text-[11px] text-slate-600">
+                <strong className="text-slate-800">Combinación flexible (opcional):</strong>{' '}
+                Los planes independientes <strong>no se suman</strong> entre sí. Usa este botón o marca{' '}
+                <em>"Combinar / Sumar en Paquete"</em> dentro de las tarjetas cuando quieras sumar Sanitas Care + HospitalWise.
+              </div>
+              <button
+                type="button"
+                onClick={combineSanitasAndHospitalWise}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black border transition cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  areSanitasAndHospitalWiseCombined
+                    ? 'bg-teal-600 text-white border-teal-700 shadow-sm hover:bg-teal-700'
+                    : 'bg-gradient-to-r from-teal-50 to-cyan-50 text-[#005b9f] border-cyan-300 hover:border-[#008be3]'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>
+                  {areSanitasAndHospitalWiseCombined
+                    ? '✓ Sanitas + HospitalWise Combinados (Clic para separar)'
+                    : hasSanitasInPlans && hasHospitalWiseInPlans
+                      ? 'Combinar Sanitas + HospitalWise en Total'
+                      : '+ Combinar Sanitas + HospitalWise'}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Panel 3: Editor de Planes */}
@@ -2074,15 +2234,20 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             id="quoterPlanEditorPanel"
             className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#00c9b7]"></span>
                 Planes a Presentar al Cliente ({plans.length})
               </h3>
-              <div className="flex items-center gap-3 text-xs">
-                {totalSanitasFee > 0 && (
-                  <span className="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 font-bold">
-                    1.er Mes (+Fee Sanitas): ${formatMoney(totalFirstMonth)}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {hasCombinedPackage ? (
+                  <span className="px-2.5 py-1 rounded-lg bg-cyan-50 border border-cyan-200 text-[#005b9f] font-black">
+                    Paquete Combinado ({combinedPlans.length}): ${formatMoney(combinedMonthlyTotal)}/mes
+                    {combinedSanitasFee > 0 && ` • 1.er Mes $${formatMoney(combinedFirstMonthTotal)}`}
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold text-[11px]">
+                    Opciones independientes (sin suma automática)
                   </span>
                 )}
                 <span className="text-slate-400 hidden sm:inline">Sincronizado en vivo con PDF y Correo</span>
@@ -2431,22 +2596,46 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                         </div>
                       )}
 
-                      {/* Toggle Fee Sanitas + Resumen 1.er Mes */}
+                      {/* Toggle Fee Sanitas + Toggle Combinar en Paquete */}
                       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-teal-800">
+                        <div className="flex flex-wrap items-center gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-[#005b9f]">
                             <input
                               type="checkbox"
-                              checked={sanitasFee > 0}
-                              onChange={e => updatePlan(plan.id, 'hasSanitasFee', e.target.checked)}
-                              className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                              checked={Boolean(plan.includeInCombinedTotal)}
+                              onChange={e => updatePlan(plan.id, 'includeInCombinedTotal', e.target.checked)}
+                              className="w-4 h-4 rounded text-[#008be3] focus:ring-[#008be3]"
                             />
-                            <span>Sumar Fee Único de Inscripción Sanitas (+$40.00 en 1.er Mes)</span>
+                            <span>Combinar / Sumar en Paquete</span>
                           </label>
+
+                          {Boolean(plan.includeInCombinedTotal) && !hasCombinedPackage && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 font-bold text-[10px]">
+                              Marca otro plan más para sumarlos
+                            </span>
+                          )}
+
+                          {Boolean(plan.includeInCombinedTotal) && hasCombinedPackage && (
+                            <span className="px-2 py-0.5 rounded-md bg-cyan-100 text-[#005b9f] font-black text-[10px]">
+                              ✓ Sumado en Paquete Combinado
+                            </span>
+                          )}
+
+                          {(isSanitas || sanitasFee > 0) && (
+                            <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-teal-800">
+                              <input
+                                type="checkbox"
+                                checked={sanitasFee > 0}
+                                onChange={e => updatePlan(plan.id, 'hasSanitasFee', e.target.checked)}
+                                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                              />
+                              <span>Fee Único Sanitas (+$40.00 en 1.er Mes)</span>
+                            </label>
+                          )}
 
                           {sanitasFee > 0 && (
                             <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-900 font-black text-[11px] tabular-nums">
-                              1.er Mes Total: ${formatMoney(firstMonthVal)}
+                              1.er Mes Plan: ${formatMoney(firstMonthVal)}
                             </span>
                           )}
                         </div>
@@ -2652,7 +2841,11 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         <span className="font-mono font-black text-emerald-700 text-xs">
-                          ${q.totalMonthlyPremium.toFixed(2)}/mes
+                          {q.plans.filter(p => Boolean(p.includeInCombinedTotal)).length >= 2
+                            ? `Comb. $${q.totalMonthlyPremium.toFixed(2)}/mes`
+                            : q.plans.length > 1
+                              ? `Opción $${q.totalMonthlyPremium.toFixed(2)}/mes`
+                              : `$${q.totalMonthlyPremium.toFixed(2)}/mes`}
                         </span>
                         <button
                           type="button"
