@@ -129,6 +129,8 @@ export type QuotePlanCategory =
   | 'aca'
   | 'custom';
 
+export type HpgPlanLevel = 'select2000' | 'preferred4000' | 'premier5000';
+
 export interface QuotePlan {
   id: string;
   tag?: string;
@@ -145,12 +147,18 @@ export interface QuotePlan {
   extraBenefit: string;
   clientSummary: string;
   isRecommended: boolean;
-  // Campos opcionales retrocompatibles para el formato oficial Agente Contigo
+  // Campos opcionales retrocompatibles para catálogo oficial Agente Contigo
   planCategory?: QuotePlanCategory;
+  hpgLevel?: HpgPlanLevel;
   subtitleTag?: string;
   enrollmentFee?: string;
   hasSanitasFee?: boolean;
   subsidyAmount?: string;
+  planIdCode?: string;
+  referralRequired?: string;
+  acaLabsImaging?: string;
+  acaErHospital?: string;
+  acaRxTiers?: string;
   deductibleWarning?: string;
   highlights?: string[];
 }
