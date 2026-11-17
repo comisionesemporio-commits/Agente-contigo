@@ -1197,7 +1197,7 @@ export default function App() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100">
+    <div id="appShellRoot" className="min-h-screen flex flex-col bg-slate-100 print:block print:min-h-0 print:h-auto print:bg-white print:overflow-visible">
       {/* Toast Banner */}
       {toast && (
         <div className="fixed top-16 right-5 z-50 transition-all duration-300 max-w-sm w-full bg-slate-900 text-white p-4 rounded-xl shadow-2xl border border-slate-700 flex items-center space-x-3 pointer-events-auto no-print">
@@ -1225,7 +1225,7 @@ export default function App() {
         ></div>
       )}
 
-      <div className="flex-1 flex min-h-screen w-full relative">
+      <div id="appShellLayout" className="flex-1 flex min-h-screen w-full relative print:block print:min-h-0 print:h-auto print:overflow-visible">
         {/* VERTICAL SIDEBAR */}
         <aside
           className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col border-r border-slate-800 transition-transform duration-300 ease-in-out shadow-2xl lg:static lg:translate-x-0 no-print ${
@@ -1575,7 +1575,7 @@ export default function App() {
         </aside>
 
         {/* MAIN VIEWPORT */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <div id="appMainColumn" className="flex-1 flex flex-col min-w-0 overflow-y-auto print:block print:overflow-visible print:h-auto">
           {/* Header */}
           <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between no-print">
             <div className="flex items-center space-x-3">
@@ -1638,7 +1638,7 @@ export default function App() {
           </header>
 
           {/* MAIN CONTENT AREA */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 print:block print:p-0 print:m-0 print:space-y-0 print:overflow-visible">
             {/* KPI Banner Section (Only on Admin overview tabs) */}
             {currentRole === 'admin' && (activeTab === 'polizas' || activeTab === 'dashboard' || activeTab === 'kanban') && (
               <section className="grid grid-cols-2 md:grid-cols-5 gap-4 no-print">

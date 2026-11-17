@@ -237,13 +237,25 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   const handlePrintProposal = () => {
     setIsPrinting(true);
     document.body.classList.add('is-printing-proposal');
+
+    const cleanup = () => {
+      setIsPrinting(false);
+      document.body.classList.remove('is-printing-proposal');
+      window.removeEventListener('afterprint', cleanup);
+    };
+
+    window.addEventListener('afterprint', cleanup, { once: true });
+
     setTimeout(() => {
+      try {
+        window.scrollTo(0, 0);
+        const mainCol = document.getElementById('appMainColumn');
+        if (mainCol) mainCol.scrollTop = 0;
+      } catch (_) {}
       window.print();
-      setTimeout(() => {
-        setIsPrinting(false);
-        document.body.classList.remove('is-printing-proposal');
-      }, 1000);
-    }, 150);
+      // Respaldo por si el navegador en iframe no dispara afterprint
+      setTimeout(cleanup, 12000);
+    }, 180);
   };
 
   useEffect(() => {
@@ -1977,7 +1989,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       </div>
 
       {/* Opciones Ejecutivas (SIN REPETICIONES) */}
-      <div className="p-6 sm:p-8 space-y-5">
+      <div className="p-6 sm:p-8 print:p-4 space-y-5 print:space-y-3.5">
         {plans.map((plan, idx) => {
           const regularMonthly = parseMoney(plan.premium);
           const feeInfo = getPlanEnrollmentFee(plan);
@@ -1988,9 +2000,9 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
           return (
             <div
               key={plan.id}
-              className={`rounded-2xl border p-5 space-y-3 print-avoid-break ${
+              className={`rounded-2xl border p-5 print:p-4 space-y-3 print:space-y-2 print-avoid-break ${
                 plan.isRecommended
-                  ? 'border-[#00a396] ring-1 ring-[#00c9b7]/40 bg-white shadow-sm'
+                  ? 'border-[#00a396] ring-1 ring-[#00c9b7]/40 bg-white shadow-sm print:shadow-none'
                   : 'border-slate-200 bg-white'
               }`}
             >
@@ -2091,14 +2103,14 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
         })}
 
         {/* CUADRO COMPARATIVO RESUMEN OBLIGATORIO AL FINAL DE TODO PDF */}
-        <div className="pt-2 print-avoid-break">
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 mb-2.5">
+        <div className="pt-2 print:pt-1">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 mb-2.5 print-keep-with-next">
             CUADRO COMPARATIVO DE INVERSIÓN ({clientMembers.toUpperCase()})
           </h3>
-          <div className="overflow-hidden rounded-xl border border-slate-300">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-hidden print-overflow-visible print:overflow-visible rounded-xl border border-slate-300">
+            <table className="w-full text-left border-collapse text-xs print:text-[11px] print-comparison-table">
               <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 text-slate-800">
+                <tr className="bg-slate-100 border-b border-slate-300 text-slate-800 print-avoid-break">
                   <th className="py-2.5 px-3 font-black">Alternativa de Cobertura</th>
                   <th className="py-2.5 px-3 font-black">Deducible y Máximo de Bolsillo</th>
                   <th className="py-2.5 px-3 font-black text-right">1.er Mes</th>
@@ -2112,7 +2124,10 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                   const firstM = reg + feeInfo.amount;
                   const isInCombined = hasCombinedPackage && Boolean(plan.includeInCombinedTotal);
                   return (
-                    <tr key={plan.id} className={plan.isRecommended ? 'bg-teal-50/40' : isInCombined ? 'bg-cyan-50/30' : 'bg-white'}>
+                    <tr
+                      key={plan.id}
+                      className={`print-avoid-break ${plan.isRecommended ? 'bg-teal-50/40' : isInCombined ? 'bg-cyan-50/30' : 'bg-white'}`}
+                    >
                       <td className="py-2.5 px-3 font-bold text-slate-900">
                         Opción {idx + 1}: {plan.planName}
                         <span className="block text-[10px] font-semibold text-slate-500">{plan.company}</span>
@@ -2143,7 +2158,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                   );
                 })}
                 {hasCombinedPackage && (
-                  <tr className="bg-cyan-50/70 border-t-2 border-[#008be3]/50">
+                  <tr className="bg-cyan-50/70 border-t-2 border-[#008be3]/50 print-avoid-break">
                     <td className="py-2.5 px-3 font-black text-[#005b9f]" colSpan={2}>
                       Total Paquete Combinado ({combinedPlans.length} planes)
                       <span className="block text-[10px] font-bold text-slate-600 mt-0.5">
@@ -2174,7 +2189,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       </div>
 
       {/* Footer Oficial */}
-      <div className="py-3 px-6 sm:px-8 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+      <div className="py-3 px-6 sm:px-8 print:px-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2 print-avoid-break">
         <span className="font-bold text-[#008be3]">
           Agente Contigo • Cotización Personalizada de Salud
         </span>
@@ -2186,7 +2201,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 quoter-root print:space-y-0">
       {/* Top Banner & Fast Actions */}
       {!isPrinting && (
         <>
@@ -3821,7 +3836,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       {/* Panel 4: PROPUESTA PERSONALIZADA IMPRIMIBLE OFICIAL AGENTE CONTIGO */}
       <div
         id="printableProposal"
-        className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden print:shadow-none print:border-none"
+        className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden print:overflow-visible print:rounded-none print:shadow-none print:border-none"
       >
         {renderOfficialAgenteContigoDocument()}
       </div>
