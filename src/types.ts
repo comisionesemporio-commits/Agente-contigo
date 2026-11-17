@@ -119,6 +119,14 @@ export interface DailyTask {
   creadaEn: string;
 }
 
+export type QuotePlanCategory =
+  | 'medmax'
+  | 'hpg4000'
+  | 'ahw4'
+  | 'sanitas_bundle'
+  | 'aca'
+  | 'custom';
+
 export interface QuotePlan {
   id: string;
   tag?: string;
@@ -135,6 +143,14 @@ export interface QuotePlan {
   extraBenefit: string;
   clientSummary: string;
   isRecommended: boolean;
+  // Campos opcionales retrocompatibles para el formato oficial Agente Contigo
+  planCategory?: QuotePlanCategory;
+  subtitleTag?: string;
+  enrollmentFee?: string;
+  hasSanitasFee?: boolean;
+  subsidyAmount?: string;
+  deductibleWarning?: string;
+  highlights?: string[];
 }
 
 export interface SavedQuote {

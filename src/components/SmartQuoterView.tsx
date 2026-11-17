@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { QuotePlan, SavedQuote } from '../types';
+import { QuotePlan, QuotePlanCategory, SavedQuote } from '../types';
 import {
-  Sparkles, Upload, Copy, Printer, Save, CheckCircle2,
-  AlertCircle, Search, Plus, Trash2, Globe, FileText,
-  DollarSign, Shield, HeartPulse, Building, User, Key,
-  ChevronDown, ExternalLink, RefreshCw, Eye, X, Send
+  Sparkles, Upload, Copy, Printer, Save, Trash2, Globe, FileText,
+  Key, RefreshCw, Eye, X, Send, Plus, Mail, AlertTriangle,
+  ShieldCheck, CheckCircle2, Layers
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import {
@@ -13,7 +12,6 @@ import {
 import { initSupabase } from '../services/supabase';
 
 // Modelos oficiales activos de Google Gemini Flash compatibles con generateContent en v1beta
-const OFFICIAL_GEMINI_MODEL = 'gemini-flash-latest';
 const SUPPORTED_GEMINI_MODELS = [
   'gemini-flash-latest',
   'gemini-3.8-flash',
@@ -67,6 +65,248 @@ const formatFriendlyGeminiError = (err: any): string => {
   return raw;
 };
 
+const MEDMAX_DEFAULT_WARNING =
+  'IMPORTANTE: Todos los copagos y beneficios detallados aplican ÚNICAMENTE DESPUÉS de cumplir el deducible anual seleccionado (excepto cuidado preventivo y telemedicina 24/7 RelyMD a $0 copago).';
+
+const SANITAS_FEE_AMOUNT = 40;
+
+const parseMoney = (val?: string | number): number => {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  const cleaned = String(val || '').replace(/[^0-9.-]/g, '');
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const formatMoney = (val: number): string => {
+  return (Number.isFinite(val) ? val : 0).toFixed(2);
+};
+
+const isMedMaxPlan = (plan: QuotePlan): boolean => {
+  if (plan.planCategory === 'medmax') return true;
+  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
+  return text.includes('medmax');
+};
+
+const isSanitasPlan = (plan: QuotePlan): boolean => {
+  if (plan.hasSanitasFee) return true;
+  if (plan.planCategory === 'sanitas_bundle') return true;
+  const text = `${plan.company} ${plan.planName}`.toLowerCase();
+  return text.includes('sanitas');
+};
+
+const getPlanSanitasFee = (plan: QuotePlan): number => {
+  if (plan.hasSanitasFee === true) {
+    return parseMoney(plan.enrollmentFee || SANITAS_FEE_AMOUNT) || SANITAS_FEE_AMOUNT;
+  }
+  if (plan.hasSanitasFee === false) return 0;
+  if (isSanitasPlan(plan)) return SANITAS_FEE_AMOUNT;
+  return 0;
+};
+
+const getPlanFirstMonth = (plan: QuotePlan): number => {
+  return parseMoney(plan.premium) + getPlanSanitasFee(plan);
+};
+
+const getPlanHighlights = (plan: QuotePlan): string[] => {
+  if (Array.isArray(plan.highlights) && plan.highlights.length > 0) {
+    return plan.highlights.filter(h => h && h.trim().length > 0);
+  }
+
+  // Fallback estructurado para planes cargados desde OCR o cotizaciones antiguas
+  const items: string[] = [];
+  if (plan.planCategory === 'aca') {
+    items.push(
+      `Deducible y Máximo de Bolsillo: Deducible anual de ${plan.deductible || '$0'} y gasto máximo anual de bolsillo (Out-of-Pocket Max) de ${plan.moop || 'consultar'}.`
+    );
+    items.push(
+      `Copagos desde el Día 1: Médico primario ${plan.primaryCare || '$0'}, especialista ${plan.specialist || '$0'}, medicamentos genéricos ${plan.genericRx || '$0'} y sala de urgencias ${plan.urgencies || '$0'}.`
+    );
+    if (plan.subsidyAmount) {
+      items.push(`Crédito Fiscal / Subsidio ACA Aplicado: ${plan.subsidyAmount} aplicado directamente para reducir su prima mensual.`);
+    }
+  } else {
+    if (plan.clientSummary) items.push(plan.clientSummary);
+    if (plan.extraBenefit) items.push(plan.extraBenefit);
+  }
+  return items;
+};
+
+interface PlanTemplateConfig {
+  category: QuotePlanCategory;
+  shortLabel: string;
+  badgeText: string;
+  accentColor: string;
+  createPlan: () => QuotePlan;
+}
+
+const PLAN_TEMPLATES: PlanTemplateConfig[] = [
+  {
+    category: 'medmax',
+    shortLabel: 'MedMax',
+    badgeText: 'Copagos tras Deducible',
+    accentColor: 'border-amber-300 bg-amber-50/70 hover:bg-amber-100/70 text-amber-950',
+    createPlan: () => ({
+      id: 'plan_medmax_' + Date.now(),
+      tag: 'PLAN MÉDICO CON COPAGOS TRAS DEDUCIBLE',
+      planCategory: 'medmax',
+      company: 'MedMax',
+      planName: 'MedMax – Plan de Salud (Copagos Tras Deducible)',
+      tier: 'Deductible Value Plan',
+      subtitleTag: 'DEDUCTIBLE VALUE PLAN • COPAGOS APLICAN TRAS DEDUCIBLE',
+      premium: '889.00',
+      deductible: '$3,000',
+      moop: '$7,500',
+      primaryCare: '$50 (tras deducible)',
+      specialist: '$50 (tras deducible)',
+      genericRx: '$0 preventivos',
+      urgencies: '$50 UC / $250 ER (tras deducible)',
+      deductibleWarning: MEDMAX_DEFAULT_WARNING,
+      highlights: [
+        'Sin Deducible ($0 Inmediato): Consultas preventivas y telemedicina 24/7 (RelyMD) al 100% cubiertas ($0 copago), además de medicamentos preventivos genéricos a $0.',
+        'Servicios Tras Cumplir Deducible: Todos los copagos detallados aplican DESPUÉS de cumplir el deducible anual: consultas médico primario, especialista y urgencias a $50 (máx. 10 visitas/año), laboratorios simples a $25 y radiología a $50 (límite 3/año), y estudios avanzados (MRI, CT, PET) a $200.',
+        'Hospitalización, Cirugías y Emergencias (Después del deducible): Cirugías ambulatorias o en consultorio a $250 (hasta 3/año), hospitalización e internación a $1,000 (hasta 2 admisiones/año, máx. 10 días), y Sala de Emergencias (ER) / ambulancia a $250 (2 por año).'
+      ],
+      extraBenefit:
+        'Incluye prevención y telemedicina 24/7 (RelyMD) a $0 sin deducible; todos los demás copagos aplican tras cumplir el deducible anual.',
+      clientSummary:
+        'Acceso inmediato a cuidado preventivo y telemedicina 24/7 a $0. Todos los demás copagos de consultas, estudios, emergencias y hospitalización aplican después de cumplir el deducible anual.',
+      isRecommended: false
+    })
+  },
+  {
+    category: 'hpg4000',
+    shortLabel: 'HPG Preferred 4000',
+    badgeText: 'Efectivo Sin Deducible',
+    accentColor: 'border-sky-300 bg-sky-50/70 hover:bg-sky-100/70 text-sky-950',
+    createPlan: () => ({
+      id: 'plan_hpg4000_' + Date.now(),
+      tag: 'INDEMNIZACIÓN FIJA EN EFECTIVO SIN DEDUCIBLE',
+      planCategory: 'hpg4000',
+      company: 'Golden Rule Insurance Company (UnitedHealthcare)',
+      planName: 'Health ProtectorGuard® Preferred 4000',
+      tier: 'Indemnización en Efectivo • $0 Deducible',
+      subtitleTag: 'GOLDEN RULE INSURANCE COMPANY • PAGOS FIJOS EN EFECTIVO SIN DEDUCIBLE',
+      premium: '435.09',
+      deductible: '$0 (Sin deducible)',
+      moop: 'Tope Anual $2,000,000 / Vitalicio $5,000,000',
+      primaryCare: '$100/visita (paga el plan)',
+      specialist: '$125/visita (SP/UC)',
+      genericRx: '$20 Genérico / $60 Marca',
+      urgencies: '$500/día ER • $125/visita UC',
+      highlights: [
+        'Hospitalización y Cuidados Críticos ($0 Deducible): Paga en efectivo $4,000/día de internación hospitalaria por persona en Año 1 y sube a $8,000/día desde el Año 2+ (sin límite de días), $4,000/día en Cuidados Intensivos (UCI, hasta 60 días/año) y bono de admisión de $3,000 el primer día de ingreso al año.',
+        'Emergencias, Cirugías y Ambulancia: $500 por día en sala de emergencias (hasta 3 días/año), indemnización quirúrgica de $375 a $37,500 más $2,000/día por uso de quirófano ambulatorio (máx. 10 días/año), y ambulancia terrestre ($1,000) o aérea ($5,000).',
+        'Consultas, Medicamentos y Prevención: Consultas médicas $100 PCP / $125 especialista o urgencias (Año 1: 6 visitas / Año 2+: 8 visitas), medicamentos recetados $20 genéricos / $60 de marca (Año 1: 12 recetas), examen físico anual ($125), labs ($50–$100), rayos X ($75–$100), telemedicina $0 (HealthiestYou) + Red UnitedHealthcare Choice Plus y Optum Perks.'
+      ],
+      extraBenefit:
+        'Pagos fijos en efectivo sin deducible + Telemedicina $0 (HealthiestYou) + Red UnitedHealthcare Choice Plus y descuentos Optum Perks.',
+      clientSummary:
+        'Seguro de pagos fijos en efectivo sin deducible: $4,000/día hospital Año 1 ($8,000/día Año 2+), $4,000/día UCI, $500 emergencias, $100 PCP / $125 especialista y $20 genéricos / $60 marca.',
+      isRecommended: false
+    })
+  },
+  {
+    category: 'ahw4',
+    shortLabel: 'AHW 4 (First Health)',
+    badgeText: 'Red First Health',
+    accentColor: 'border-indigo-300 bg-indigo-50/70 hover:bg-indigo-100/70 text-indigo-950',
+    createPlan: () => ({
+      id: 'plan_ahw4_' + Date.now(),
+      tag: 'HOSPITAL, CIRUGÍA, FARMACIA Y PREVENCIÓN',
+      planCategory: 'ahw4',
+      company: 'AHW 4 (Red First Health)',
+      planName: 'Plan de Salud AHW 4 — Red First Health',
+      tier: 'Red First Health • Beneficios Fijos + Farmacia',
+      subtitleTag: 'RED FIRST HEALTH • HOSPITALIZACIÓN, FARMACIA Y PREVENCIÓN INCLUIDA',
+      premium: '0.00',
+      deductible: '$0',
+      moop: 'Tope Hospital $10,000/año • Cirugía $2,000/año',
+      primaryCare: '4 visitas/año ($50)',
+      specialist: '4 visitas/año ($75)',
+      genericRx: '$0 Prev. / $5 Pref. / $40 Marca',
+      urgencies: '$1,000 ER / $500 Ambulancia',
+      highlights: [
+        'Beneficios Hospitalarios y Cirugías: Hospitalización $1,000/día (máx. $10,000/año), cirugía hospitalaria o ambulatoria $1,000 (máx. $2,000/año) y Emergencia / Ambulancia $1,000 / $500.',
+        'Farmacia (hasta 30 días): Genérico preventivo $0, genérico preferido $5 y medicamento de marca $40 (con autorización previa).',
+        'Consultas y Prevención Incluida (Red First Health): 4 consultas médico primario ($50) y 4 especialista/UC ($75). Cuidado preventivo al $0 dentro de la red First Health (examen físico anual, mamografía 2D, papanicolaou, presión/diabetes, kit colorrectal, niño sano; nota: prevención no cubierta si se realiza en hospital) + telemedicina RelyMD $0 y negociación de facturas hospitalarias.'
+      ],
+      extraBenefit:
+        'Red First Health + prevención incluida fuera de hospital + RelyMD $0 + Negociación de facturas hospitalarias.',
+      clientSummary:
+        'Incluye hospitalización $1,000/día (máx. $10,000/año), cirugía $1,000 (máx. $2,000), emergencia/ambulancia $1,000/$500, farmacia $0/$5/$40 y prevención en red First Health.',
+      isRecommended: false
+    })
+  },
+  {
+    category: 'sanitas_bundle',
+    shortLabel: 'Sanitas Care + HospitalWise',
+    badgeText: '+$40 Fee 1.er Mes Auto',
+    accentColor: 'border-teal-300 bg-teal-50/80 hover:bg-teal-100/80 text-teal-950',
+    createPlan: () => ({
+      id: 'plan_sanitas_' + Date.now(),
+      tag: 'ATENCIÓN PRIMARIA + RESPALDO HOSPITALARIO',
+      planCategory: 'sanitas_bundle',
+      company: 'Sanitas Care + HospitalWise Bundle 1',
+      planName: 'Sanitas Care + HospitalWise® Bundle 1',
+      tier: 'Membresía Sanitas + Golden Rule',
+      subtitleTag: 'SANITAS CARE (+$40 FEE ÚNICO 1.ER MES) + HOSPITALWISE BUNDLE 1',
+      premium: '218.11',
+      hasSanitasFee: true,
+      enrollmentFee: '40.00',
+      deductible: '$0',
+      moop: '$0 Deducible • Pagos Fijos HospitalWise',
+      primaryCare: '$0 Ilimitado (Sanitas)',
+      specialist: '10%–40% Descuento Sanitas',
+      genericRx: 'Desde $5 (30 días)',
+      urgencies: '$0 (2/año Sanitas) + $250 UC / $500 ER',
+      highlights: [
+        'Sanitas Care (Adulto $89/mes o Pareja $159/mes + $40.00 fee único de inscripción solo en el 1.er mes): Citas presenciales y videoconsultas virtuales ilimitadas a $0, exámenes de laboratorio 2 veces al año (sangre, glucosa, colesterol, perfil general, orina, EKG y gripe), 2 urgencias al año a $0 en centros Sanitas, evaluación/limpiezas dentales a $0 en sur de Florida, nutrición y descuentos del 10% al 40% en especialistas.',
+        'HospitalWise® Bundle 1 (Golden Rule Ins.): Respaldo en efectivo de $1,000/día por hospitalización (máx. 10 días), $1,000/día observación (máx. 4 días/año) y $1,000/día UCI (máx. 10 días); $500/día Emergencias (ER), $250/día Urgencias (UC) y $100/día consultorio (máx. 4 días/año); cirugía ambulatoria $1,000/día, diagnóstico $500/día y ambulancia terrestre ($250) o aérea ($2,500).'
+      ],
+      extraBenefit:
+        'Fee único de inscripción Sanitas de $40.00 sumado automáticamente al total del 1.er mes + ayuda para negociar facturas hospitalarias.',
+      clientSummary:
+        'Combina citas y laboratorios a $0 ilimitados en centros Sanitas con pagos fijos en efectivo para hospitalización, UCI, cirugías y emergencias mediante HospitalWise Bundle 1.',
+      isRecommended: false
+    })
+  },
+  {
+    category: 'aca',
+    shortLabel: 'Plan ACA (Obamacare)',
+    badgeText: 'Con Subsidio + Día 1',
+    accentColor: 'border-emerald-300 bg-emerald-50/80 hover:bg-emerald-100/80 text-emerald-950',
+    createPlan: () => ({
+      id: 'plan_aca_' + Date.now(),
+      tag: 'MERCADO DE SALUD ACA • OBAMACARE',
+      planCategory: 'aca',
+      company: 'Oscar / Ambetter / UnitedHealthcare (ACA)',
+      planName: 'Plan ACA Silver CSR (Obamacare)',
+      tier: 'Plata CSR • HMO / EPO',
+      subtitleTag: 'COBERTURA MÉDICA MAYOR ACA • COPAGOS DESDE EL DÍA 1',
+      premium: '0.00',
+      subsidyAmount: '$485.00/mes',
+      deductible: '$0',
+      moop: '$1,800',
+      primaryCare: '$0 desde Día 1',
+      specialist: '$15 desde Día 1',
+      genericRx: '$3 desde Día 1',
+      urgencies: '$25 UC / $150 ER desde Día 1',
+      highlights: [
+        'Deducible y Máximo de Bolsillo: Deducible médico anual de $0 y gasto máximo anual de bolsillo (Out-of-Pocket Max) de $1,800.',
+        'Copagos desde el Día 1: Atención primaria $0/visita, especialista $15/visita, atención de urgencias $25/visita, medicamentos genéricos $3 y servicios preventivos al 100% cubiertos sin espera.',
+        'Crédito Fiscal / Subsidio Federal ACA: Subsidio gubernamental aplicado directamente para reducir la prima mensual.'
+      ],
+      extraBenefit:
+        'Cobertura esencial mínima bajo la Ley ACA: hospitalización, maternidad, salud mental, emergencias y prevención al 100% sin límites anuales.',
+      clientSummary:
+        'Plan oficial de Obamacare con subsidio federal aplicado, máximo de bolsillo protegido y copagos bajos desde el primer día de vigencia.',
+      isRecommended: true
+    })
+  }
+];
+
+type EmailMode = 'privado' | 'aca';
+
 interface SmartQuoterViewProps {
   currentSeller: string;
   selectedYear: string;
@@ -82,7 +322,7 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   const [clientName, setClientName] = useState('Familia Ramírez');
   const [clientLocation, setClientLocation] = useState('Florida (33166)');
   const [clientMembers, setClientMembers] = useState('3 Personas');
-  const [quoteYear, setQuoteYear] = useState('2027');
+  const [quoteYear, setQuoteYear] = useState(selectedYear || '2027');
   const [agentName, setAgentName] = useState(() => currentSeller || 'Equipo Agente Contigo');
 
   // AI & Upload State
@@ -101,10 +341,13 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     {
       id: 'plan_demo_1',
       tag: 'OPCIÓN PRINCIPAL RECOMENDADA',
+      planCategory: 'aca',
       company: 'UnitedHealthcare',
       planName: 'Silver Value Copay',
       tier: 'Plata CSR',
+      subtitleTag: 'COBERTURA MÉDICA MAYOR ACA • COPAGOS DESDE EL DÍA 1',
       premium: '0.00',
+      subsidyAmount: '$485.00/mes',
       deductible: '$0',
       moop: '$1,500',
       primaryCare: '$0',
@@ -112,7 +355,7 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
       genericRx: '$3',
       urgencies: '$30',
       extraBenefit: 'Incluye chequeos anuales al 100% y beneficios de telemedicina gratuita',
-      clientSummary: 'No pagas nada al mes ($0) y tus consultas médicas y preventivas son completamente gratis.',
+      clientSummary: 'No pagas nada al mes ($0) y tus consultas médicas y preventivas son completamente gratis desde el día 1.',
       isRecommended: true
     }
   ]);
@@ -121,6 +364,12 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   const [savedQuotesList, setSavedQuotesList] = useState<SavedQuote[]>(loadQuotes);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+
+  // Email Generator Modal State
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailMode, setEmailMode] = useState<EmailMode>('privado');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
 
   useEffect(() => {
     const onBeforePrint = () => {
@@ -174,7 +423,9 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   }, []);
 
   const processIncomingFiles = (files: File[]) => {
-    const validFiles = files.filter(f => f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    const validFiles = files.filter(
+      f => f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+    );
     if (validFiles.length === 0) {
       onShowToast('Formato Incorrecto', 'Por favor sube imágenes (PNG, JPG) o documentos PDF de cotización.', 'error');
       return;
@@ -194,13 +445,15 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
           reader.readAsDataURL(file);
         });
       })
-    ).then(newFiles => {
-      setUploadedFiles(prev => [...prev, ...newFiles]);
-      onShowToast('Archivos Cargados', `${newFiles.length} archivo(s) listo(s) para analizar con IA.`, 'success');
-    }).catch(err => {
-      console.error('Error procesando archivos:', err);
-      onShowToast('Error', 'No se pudieron procesar algunos archivos.', 'error');
-    });
+    )
+      .then(newFiles => {
+        setUploadedFiles(prev => [...prev, ...newFiles]);
+        onShowToast('Archivos Cargados', `${newFiles.length} archivo(s) listo(s) para analizar con IA.`, 'success');
+      })
+      .catch(err => {
+        console.error('Error procesando archivos:', err);
+        onShowToast('Error', 'No se pudieron procesar algunos archivos.', 'error');
+      });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -219,9 +472,10 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     const newPlan: QuotePlan = {
       id: 'plan_' + Date.now(),
       tag: 'OPCIÓN ADICIONAL',
+      planCategory: 'custom',
       company: 'Nueva Aseguradora',
-      planName: 'Silver Standard / Bronze',
-      tier: 'Plata / CSR',
+      planName: 'Plan de Cobertura Médica',
+      tier: 'Estándar',
       premium: '0.00',
       deductible: '$0',
       moop: '$1,500',
@@ -230,11 +484,23 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
       genericRx: '$3',
       urgencies: '$35',
       extraBenefit: 'Incluye exámenes preventivos al 100%',
-      clientSummary: 'No pagas nada al mes y tus visitas médicas regulares están 100% cubiertas.',
+      clientSummary: 'Cobertura médica personalizada con asesoría gratuita de Agente Contigo.',
       isRecommended: plans.length === 0
     };
     setPlans(prev => [...prev, newPlan]);
-    onShowToast('Plan Agregado', 'Puedes editar los valores y copagos directamente.', 'info');
+    onShowToast('Plan Agregado', 'Puedes editar los valores, Máximo de Bolsillo y copagos en vivo.', 'info');
+  };
+
+  const addTemplatePlan = (template: PlanTemplateConfig) => {
+    const created = template.createPlan();
+    setPlans(prev => [...prev, created]);
+    const extraMsg =
+      created.hasSanitasFee
+        ? ' Se sumará automáticamente el fee único de $40.00 en el total del 1.er mes.'
+        : created.planCategory === 'medmax'
+          ? ' Incluye la alerta obligatoria de copagos tras deducible.'
+          : '';
+    onShowToast(`Plantilla ${template.shortLabel} Agregada`, `Plan cargado con formato oficial Agente Contigo.${extraMsg}`, 'success');
   };
 
   const deletePlan = (id: string) => {
@@ -242,7 +508,21 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   };
 
   const updatePlan = (id: string, field: keyof QuotePlan, value: any) => {
-    setPlans(prev => prev.map(p => (p.id === id ? { ...p, [field]: value } : p)));
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const next: QuotePlan = { ...p, [field]: value };
+        // Si activan manualmente hasSanitasFee, garantizar que enrollmentFee tenga 40.00 por defecto
+        if (field === 'hasSanitasFee' && value === true && !next.enrollmentFee) {
+          next.enrollmentFee = '40.00';
+        }
+        // Si activan categoría medmax manualmente, garantizar la alerta obligatoria si está vacía
+        if (field === 'planCategory' && value === 'medmax' && !next.deductibleWarning) {
+          next.deductibleWarning = MEDMAX_DEFAULT_WARNING;
+        }
+        return next;
+      })
+    );
   };
 
   // AI OCR / Extraction
@@ -263,7 +543,6 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     setAiStatusText('Analizando documentos y capturas con Gemini Flash...');
 
     try {
-      // Ejecutor inteligente con @google/genai, respaldo multi-modelo ante saturación (503) y ListModels
       const generateWithActiveGemini = async (
         key: string,
         contentsPayload: any,
@@ -294,25 +573,25 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
           return resText;
         };
 
-        // Descubrir todos los modelos compatibles disponibles en la cuenta
         const discoverAllModels = async (): Promise<string[]> => {
           try {
             const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
             if (!listRes.ok) return [];
             const listData = await listRes.json();
             return (listData.models || [])
-              .filter((m: any) =>
-                Array.isArray(m.supportedGenerationMethods) &&
-                m.supportedGenerationMethods.includes('generateContent') &&
-                typeof m.name === 'string' &&
-                m.name.includes('gemini') &&
-                !m.name.includes('tts') &&
-                !m.name.includes('image') &&
-                !m.name.includes('live') &&
-                !m.name.includes('transcribe') &&
-                !m.name.includes('embedding') &&
-                !m.name.includes('vision') &&
-                !m.name.includes('robotics')
+              .filter(
+                (m: any) =>
+                  Array.isArray(m.supportedGenerationMethods) &&
+                  m.supportedGenerationMethods.includes('generateContent') &&
+                  typeof m.name === 'string' &&
+                  m.name.includes('gemini') &&
+                  !m.name.includes('tts') &&
+                  !m.name.includes('image') &&
+                  !m.name.includes('live') &&
+                  !m.name.includes('transcribe') &&
+                  !m.name.includes('embedding') &&
+                  !m.name.includes('vision') &&
+                  !m.name.includes('robotics')
               )
               .map((m: any) => m.name.replace(/^models\//, ''))
               .sort((a: string, b: string) => {
@@ -330,7 +609,6 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
         const candidatePool = Array.from(new Set([...SUPPORTED_GEMINI_MODELS, ...discovered]));
 
         let lastError: any = null;
-        // Hasta 2 rondas completas si hay saturación temporal 503
         for (let round = 0; round < 2; round++) {
           if (round === 1) {
             options?.onStatus?.('⏳ Servidores de Gemini con alta demanda, reintentando con modelos alternativos...');
@@ -361,24 +639,26 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
         throw lastError || new Error('No se encontró un modelo de Gemini disponible en este momento.');
       };
 
-      const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare, UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar, Cigna, etc.).
-Analiza cuidadosamente las imágenes adjuntas, que son capturas de pantalla de cotizaciones de seguros de salud.
-Extrae cada plan de seguro que aparezca en las capturas con sus valores exactos.
+      const promptText = `Eres el asistente experto de 'Agente Contigo', una agencia de seguros de salud (Obamacare / ACA, MedMax, Health ProtectorGuard Preferred 4000, AHW 4 First Health, Sanitas Care + HospitalWise Bundle 1, UnitedHealthcare, Oscar, Ambetter, Florida Blue, Cigna).
+Analiza cuidadosamente las imágenes o documentos adjuntos, que son capturas de cotizaciones o guías de beneficios.
+Extrae cada plan de seguro que aparezca con sus valores exactos.
 Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin texto antes ni después):
 [
   {
-    "company": "Nombre de la aseguradora (ej: UnitedHealthcare, ManhattanLife, Florida Blue, Ambetter, Oscar)",
-    "planName": "Nombre completo del plan (ej: Silver Value Copay, Bronze Essential, etc.)",
-    "tier": "Categoría o Metal (ej: Plata CSR, Bronce, Póliza Complementaria, Dental)",
+    "company": "Nombre de la aseguradora (ej: UnitedHealthcare, MedMax, Golden Rule / UHC, First Health AHW 4, Sanitas Care, Oscar, Ambetter)",
+    "planName": "Nombre completo del plan",
+    "tier": "Categoría o Metal (ej: Plata CSR, Bronce, Deductible Value Plan, Indemnización en Efectivo)",
+    "planCategory": "Una de: medmax | hpg4000 | ahw4 | sanitas_bundle | aca | custom",
     "premium": "Monto de la prima mensual en dólares (solo el número con decimales, ej: '0.00' o '45.20')",
-    "deductible": "Deducible individual (ej: '$0' o '$1,500')",
-    "moop": "Máximo de desembolso de bolsillo (MOOP) (ej: '$1,500')",
-    "primaryCare": "Copago médico primario (ej: '$0' o '$10')",
-    "specialist": "Copago especialista (ej: '$15' o '$30')",
-    "genericRx": "Copago medicinas genéricas (ej: '$3' o '$0')",
-    "urgencies": "Copago salas de urgencias / Urgent Care (ej: '$25' o '20%')",
-    "extraBenefit": "Beneficios clave como dental, visión, recompensas o telemedicina",
-    "clientSummary": "Explicación sencilla y amigable de 1 o 2 oraciones para el cliente sobre qué cubre y por qué le conviene.",
+    "subsidyAmount": "Si es plan ACA y aparece el subsidio o crédito fiscal, ej '$485.00/mes', si no ''",
+    "deductible": "Deducible individual/familiar (ej: '$0' o '$3,000')",
+    "moop": "Máximo de Bolsillo (Out-of-Pocket Max) (ej: '$1,500' o '$9,200')",
+    "primaryCare": "Copago médico primario (ej: '$0' o '$50')",
+    "specialist": "Copago especialista (ej: '$15' o '$125')",
+    "genericRx": "Copago medicinas genéricas (ej: '$3' o '$20')",
+    "urgencies": "Copago urgencias / sala de emergencias (ej: '$25 UC / $250 ER')",
+    "extraBenefit": "Beneficios clave como telemedicina, prevención, dental, hospitalización",
+    "clientSummary": "Explicación sencilla y amigable de 1 o 2 oraciones para el cliente sobre qué cubre.",
     "isRecommended": true
   }
 ]`;
@@ -395,14 +675,10 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
         }
       });
 
-      const rawText = await generateWithActiveGemini(
-        keyToUse,
-        [{ parts }],
-        {
-          responseMimeType: 'application/json',
-          onStatus: (msg) => setAiStatusText(msg)
-        }
-      );
+      const rawText = await generateWithActiveGemini(keyToUse, [{ parts }], {
+        responseMimeType: 'application/json',
+        onStatus: msg => setAiStatusText(msg)
+      });
 
       let cleanJson = rawText.trim();
       if (cleanJson.startsWith('```json')) {
@@ -414,7 +690,6 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
       const parsedPlans = JSON.parse(cleanJson);
 
       if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
-        // Opcional: verificación de beneficios oficiales en Google
         if (enableWebSearch) {
           setAiStatusText('🌐 Consultando internet para verificar beneficios oficiales...');
           for (let i = 0; i < parsedPlans.length; i++) {
@@ -435,23 +710,47 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
           }
         }
 
-        const mapped: QuotePlan[] = parsedPlans.map((p, idx) => ({
-          id: 'plan_ai_' + Date.now() + '_' + idx,
-          tag: idx === 0 ? 'OPCIÓN PRINCIPAL RECOMENDADA' : 'PLAN ADICIONAL / COMPLEMENTO',
-          company: p.company || 'Aseguradora',
-          planName: p.planName || 'Plan Médico',
-          tier: p.tier || 'Estándar',
-          premium: String(p.premium || '0.00').replace('$', '').trim(),
-          deductible: p.deductible || '$0',
-          moop: p.moop || '$0',
-          primaryCare: p.primaryCare || '$0',
-          specialist: p.specialist || '$0',
-          genericRx: p.genericRx || '$0',
-          urgencies: p.urgencies || '$0',
-          extraBenefit: p.extraBenefit || 'Cobertura integral según términos oficiales',
-          clientSummary: p.clientSummary || 'Plan seleccionado para tu tranquilidad y cobertura médica.',
-          isRecommended: idx === 0
-        }));
+        const mapped: QuotePlan[] = parsedPlans.map((p, idx) => {
+          const combinedName = `${p.company || ''} ${p.planName || ''}`.toLowerCase();
+          const detectedCategory: QuotePlanCategory =
+            p.planCategory && ['medmax', 'hpg4000', 'ahw4', 'sanitas_bundle', 'aca', 'custom'].includes(p.planCategory)
+              ? p.planCategory
+              : combinedName.includes('medmax')
+                ? 'medmax'
+                : combinedName.includes('protector') || combinedName.includes('4000')
+                  ? 'hpg4000'
+                  : combinedName.includes('ahw')
+                    ? 'ahw4'
+                    : combinedName.includes('sanitas')
+                      ? 'sanitas_bundle'
+                      : 'custom';
+
+          const sanitasDetected = detectedCategory === 'sanitas_bundle' || combinedName.includes('sanitas');
+          const medmaxDetected = detectedCategory === 'medmax';
+
+          return {
+            id: 'plan_ai_' + Date.now() + '_' + idx,
+            tag: idx === 0 ? 'OPCIÓN PRINCIPAL RECOMENDADA' : 'PLAN ADICIONAL / COMPLEMENTO',
+            planCategory: detectedCategory,
+            company: p.company || 'Aseguradora',
+            planName: p.planName || 'Plan Médico',
+            tier: p.tier || 'Estándar',
+            premium: String(p.premium || '0.00').replace(/[^0-9.]/g, '') || '0.00',
+            subsidyAmount: p.subsidyAmount || '',
+            hasSanitasFee: sanitasDetected,
+            enrollmentFee: sanitasDetected ? '40.00' : undefined,
+            deductibleWarning: medmaxDetected ? MEDMAX_DEFAULT_WARNING : undefined,
+            deductible: p.deductible || '$0',
+            moop: p.moop || 'Consultar detalle',
+            primaryCare: p.primaryCare || '$0',
+            specialist: p.specialist || '$0',
+            genericRx: p.genericRx || '$0',
+            urgencies: p.urgencies || '$0',
+            extraBenefit: p.extraBenefit || 'Cobertura integral según términos oficiales',
+            clientSummary: p.clientSummary || 'Plan seleccionado para tu tranquilidad y cobertura médica.',
+            isRecommended: idx === 0
+          };
+        });
 
         setPlans(mapped);
         onShowToast('¡Extracción Exitosa!', `Se identificaron ${mapped.length} planes médicos con IA.`, 'success');
@@ -468,11 +767,7 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
   };
 
   // Helper compartido para llamadas rápidas de texto con GoogleGenAI y respaldo automático ante 404/503
-  const callGeminiTextHelper = async (
-    key: string,
-    prompt: string,
-    tools?: any[]
-  ): Promise<string> => {
+  const callGeminiTextHelper = async (key: string, prompt: string, tools?: any[]): Promise<string> => {
     const cleanKey = key.trim().replace(/^['"]|['"]$/g, '');
     const ai = new GoogleGenAI({ apiKey: cleanKey });
 
@@ -482,15 +777,16 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
       if (listRes.ok) {
         const listData = await listRes.json();
         discovered = (listData.models || [])
-          .filter((m: any) =>
-            Array.isArray(m.supportedGenerationMethods) &&
-            m.supportedGenerationMethods.includes('generateContent') &&
-            typeof m.name === 'string' &&
-            m.name.includes('gemini') &&
-            !m.name.includes('tts') &&
-            !m.name.includes('image') &&
-            !m.name.includes('live') &&
-            !m.name.includes('embedding')
+          .filter(
+            (m: any) =>
+              Array.isArray(m.supportedGenerationMethods) &&
+              m.supportedGenerationMethods.includes('generateContent') &&
+              typeof m.name === 'string' &&
+              m.name.includes('gemini') &&
+              !m.name.includes('tts') &&
+              !m.name.includes('image') &&
+              !m.name.includes('live') &&
+              !m.name.includes('embedding')
           )
           .map((m: any) => m.name.replace(/^models\//, ''));
       }
@@ -532,7 +828,8 @@ Responde ÚNICAMENTE un array JSON válido con la siguiente estructura (sin text
 
     try {
       const prompt = `Actúa como un asesor estrella de seguros de 'Agente Contigo'. Escribe una explicación muy corta (máximo 1 o 2 oraciones, menos de 35 palabras) para ${clientName} sobre el plan '${plan.company} - ${plan.planName}'.
-Datos clave del plan: Prima: $${plan.premium}/mes, Deducible: ${plan.deductible}, Médico Primario: ${plan.primaryCare}, Extra: ${plan.extraBenefit}.
+Datos clave del plan: Prima: $${plan.premium}/mes, Deducible: ${plan.deductible}, Máximo de Bolsillo: ${plan.moop}, Médico Primario: ${plan.primaryCare}, Extra: ${plan.extraBenefit}.
+${isMedMaxPlan(plan) ? 'Recalca obligatoriamente que en MedMax los copagos aplican tras cumplir el deducible anual (excepto preventivo y telemedicina a $0).' : ''}
 Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas el beneficio principal sin términos complicados.`;
 
       const text = await callGeminiTextHelper(keyToUse, prompt);
@@ -574,27 +871,161 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     }
   };
 
+  // Email Builder (Modos: Sin cambio de estatus / Privado  vs  Aplica a ACA Obamacare)
+  const buildClientEmailDraft = (mode: EmailMode) => {
+    const hasMedMax = plans.some(p => isMedMaxPlan(p));
+    const hasSanitas = plans.some(p => getPlanSanitasFee(p) > 0);
+    const totalReg = plans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+    const totalFirst = plans.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
+
+    const subject =
+      mode === 'privado'
+        ? `Cotización de Cobertura de Salud ${quoteYear} – Opciones Privadas y Suplementarias | Agente Contigo (${clientName})`
+        : `Cotización Oficial ACA (Obamacare) ${quoteYear} con Subsidio Aplicado | Agente Contigo (${clientName})`;
+
+    const lines: string[] = [];
+    lines.push(`Hola ${clientName},`);
+    lines.push('');
+
+    if (mode === 'privado') {
+      lines.push(
+        `Espero que se encuentre muy bien. Con mucho gusto le comparto su propuesta personalizada de cobertura de salud para ${quoteYear} (${clientMembers} • ${clientLocation}) de parte de Agente Contigo.`
+      );
+      lines.push('');
+      lines.push(
+        `Debido a que su estatus migratorio no ha tenido cambios recientemente, hemos seleccionado estas alternativas privadas y suplementarias diseñadas para ofrecerle respaldo médico, acceso a consultas, farmacia y protección financiera ante emergencias u hospitalizaciones.`
+      );
+      if (hasMedMax) {
+        lines.push('');
+        lines.push(
+          `⚠️ ACLARACIÓN IMPORTANTE SOBRE MEDMAX: En el plan MedMax, todos los copagos y beneficios detallados (consultas médicas, laboratorios, urgencias, cirugías y hospitalización) aplican DESPUÉS de cumplir con el deducible anual seleccionado, con la excepción del cuidado preventivo y la telemedicina 24/7 (RelyMD), que están cubiertos al 100% ($0 copago) desde el primer día.`
+        );
+      }
+    } else {
+      lines.push(
+        `Espero que se encuentre muy bien. Es un gusto compartirle su cotización oficial de cobertura médica a través del Mercado de Salud ACA (Obamacare) para el período ${quoteYear} (${clientMembers} • ${clientLocation}) de parte de Agente Contigo.`
+      );
+      lines.push('');
+      lines.push(
+        `Estas opciones ya cuentan con su crédito fiscal (subsidio federal ACA) aplicado para reducir su prima mensual, e incluyen copagos directos desde el Día 1 para consultas primarias, especialistas, medicamentos y cuidado preventivo al 100% cubierto sin límites anuales ni exclusiones por condiciones preexistentes.`
+      );
+    }
+
+    lines.push('');
+    lines.push(`==================================================`);
+    lines.push(`RESUMEN DE ALTERNATIVAS (${plans.length} ${plans.length === 1 ? 'OPCIÓN' : 'OPCIONES'})`);
+    lines.push(`==================================================`);
+    lines.push('');
+
+    plans.forEach((p, idx) => {
+      const reg = parseMoney(p.premium);
+      const fee = getPlanSanitasFee(p);
+      const firstM = getPlanFirstMonth(p);
+
+      lines.push(`OPCIÓN ${idx + 1}: ${p.company} — ${p.planName}`);
+      if (mode === 'aca') {
+        lines.push(`• Prima Mensual con Subsidio: $${formatMoney(reg)}/mes${p.subsidyAmount ? ` (Crédito fiscal aplicado: ${p.subsidyAmount})` : ''}`);
+      } else {
+        lines.push(`• Mensualidad Regular: $${formatMoney(reg)}/mes`);
+        if (fee > 0) {
+          lines.push(`• Inversión 1.er Mes: $${formatMoney(firstM)} (incluye +$${formatMoney(fee)} fee único de inscripción de Sanitas Care)`);
+        }
+      }
+      lines.push(`• Deducible Anual: ${p.deductible || '$0'}`);
+      lines.push(`• Máximo de Bolsillo (Out-of-Pocket Max): ${p.moop || 'Consultar detalle'}`);
+      lines.push(
+        `• ${mode === 'aca' ? 'Copagos desde el Día 1' : 'Consultas y Copagos'}: Médico Primario ${p.primaryCare} | Especialista ${p.specialist} | Medicinas ${p.genericRx} | Urgencias/ER ${p.urgencies}`
+      );
+      if (isMedMaxPlan(p)) {
+        lines.push(
+          `• Nota MedMax: Los copagos aplican tras cumplir el deducible anual (cuidado preventivo y telemedicina RelyMD a $0 inmediato).`
+        );
+      }
+      if (p.clientSummary) {
+        lines.push(`• Beneficio clave: ${p.clientSummary}`);
+      }
+      lines.push('');
+    });
+
+    if (plans.length > 1 || hasSanitas) {
+      lines.push(`--------------------------------------------------`);
+      if (hasSanitas) {
+        lines.push(`• Total 1.er Mes (con fee único Sanitas de $${formatMoney(totalFirst - totalReg)}): $${formatMoney(totalFirst)}`);
+      }
+      lines.push(`• Mensualidad Regular${plans.length > 1 ? ' Combinada' : ''}: $${formatMoney(totalReg)}/mes`);
+      lines.push(`--------------------------------------------------`);
+      lines.push('');
+    }
+
+    lines.push(`Adjunto encontrará el documento PDF oficial de Agente Contigo con el desglose completo y el cuadro comparativo de inversión.`);
+    lines.push('');
+    lines.push(`Con nuestro acompañamiento gratuito verificamos sus médicos y medicamentos antes de activar la póliza. ¿Cuál opción le gustaría revisar o dejar activa hoy?`);
+    lines.push('');
+    lines.push(`Atentamente,`);
+    lines.push(`${agentName || 'Equipo Agente Contigo'}`);
+    lines.push(`Agente Contigo • Cotización Personalizada de Salud`);
+
+    return { subject, body: lines.join('\n') };
+  };
+
+  const openEmailGenerator = (initialMode?: EmailMode) => {
+    const inferredMode: EmailMode =
+      initialMode || (plans.some(p => p.planCategory === 'aca') ? 'aca' : 'privado');
+    const draft = buildClientEmailDraft(inferredMode);
+    setEmailMode(inferredMode);
+    setEmailSubject(draft.subject);
+    setEmailBody(draft.body);
+    setShowEmailModal(true);
+  };
+
+  const handleSwitchEmailMode = (newMode: EmailMode) => {
+    setEmailMode(newMode);
+    const draft = buildClientEmailDraft(newMode);
+    setEmailSubject(draft.subject);
+    setEmailBody(draft.body);
+  };
+
+  const copyEmailToClipboard = () => {
+    const full = `Asunto: ${emailSubject}\n\n${emailBody}`;
+    navigator.clipboard.writeText(full);
+    onShowToast('¡Correo Copiado!', 'Asunto y cuerpo del correo listos para pegar en Gmail/Outlook.', 'success');
+  };
+
   // Mensaje de Texto / SMS Resumido para el cliente
   const copyShortTextMessage = () => {
     let msg = `Hola ${clientName}, te saluda ${agentName || 'tu asesor'} de Agente Contigo.\n`;
     msg += `Te preparé la propuesta de seguro médico ${quoteYear} para ${clientLocation}:\n\n`;
 
     plans.forEach((plan, i) => {
+      const fee = getPlanSanitasFee(plan);
+      const firstM = getPlanFirstMonth(plan);
       msg += `📌 Opción ${i + 1}: ${plan.company} - ${plan.planName || plan.tier}\n`;
-      msg += `• Mensualidad: $${plan.premium}/mes | Deducible: ${plan.deductible}\n`;
+      msg += `• Mensualidad: $${formatMoney(parseMoney(plan.premium))}/mes`;
+      if (fee > 0) {
+        msg += ` (1.er mes: $${formatMoney(firstM)} con fee único Sanitas $${formatMoney(fee)})`;
+      }
+      msg += `\n`;
+      msg += `• Deducible: ${plan.deductible} | Máx. Bolsillo: ${plan.moop || 'N/A'}\n`;
       msg += `• Médico: ${plan.primaryCare} | Especialista: ${plan.specialist} | Medicinas: ${plan.genericRx}\n`;
+      if (isMedMaxPlan(plan)) {
+        msg += `• Importante MedMax: Copagos aplican tras cumplir el deducible anual (preventivo y telemedicina $0).\n`;
+      }
       if (plan.clientSummary) {
         msg += `• Resumen: ${plan.clientSummary}\n`;
       }
       msg += `\n`;
     });
 
-    const total = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
-    if (plans.length > 1) {
-      msg += `💵 Total mensual estimado: $${total.toFixed(2)}/mes\n\n`;
+    const total = plans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+    const totalFirst = plans.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
+    if (plans.length > 1 || totalFirst > total) {
+      if (totalFirst > total) {
+        msg += `💵 Total 1.er mes (con fee Sanitas): $${formatMoney(totalFirst)}\n`;
+      }
+      msg += `💵 Mensualidad regular estimada: $${formatMoney(total)}/mes\n\n`;
     }
 
-    msg += `📄 Te adjunté también el PDF con la explicación completa y desglose de beneficios. ¿Con cuál opción te gustaría que avancemos?`;
+    msg += `📄 Te adjunté también el PDF oficial de Agente Contigo con el cuadro comparativo completo. ¿Con cuál opción te gustaría que avancemos?`;
 
     navigator.clipboard.writeText(msg);
     onShowToast('¡SMS Resumido Copiado!', 'Mensaje de texto resumido listo para enviar al cliente.', 'success');
@@ -602,39 +1033,54 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
 
   // WhatsApp Message Generator (Formato completo para WhatsApp)
   const copyWhatsAppMessage = () => {
-    let msg = `🏥 *COTIZACIÓN DE SEGURO MÉDICO ${quoteYear}*\n`;
+    let msg = `🏥 *COTIZACIÓN OFICIAL DE COBERTURA DE SALUD ${quoteYear}*\n`;
     msg += `👋 ¡Hola ${clientName}! Un gusto saludarte de parte de *Agente Contigo*.\n\n`;
-    msg += `Te comparto el resumen de las mejores opciones que seleccionamos para ti en ${clientLocation} (${clientMembers}):\n\n`;
+    msg += `Te comparto las alternativas seleccionadas para ${clientMembers} en ${clientLocation}:\n\n`;
 
     plans.forEach((plan, i) => {
+      const fee = getPlanSanitasFee(plan);
+      const firstM = getPlanFirstMonth(plan);
       msg += `📌 *OPCIÓN ${i + 1}: ${plan.company} - ${plan.planName}*\n`;
-      msg += `   • 💰 *Prima Mensual:* $${plan.premium}/mes\n`;
-      msg += `   • 🛡️ *Deducible:* ${plan.deductible}\n`;
+      msg += `   • 💰 *Mensualidad Regular:* $${formatMoney(parseMoney(plan.premium))}/mes\n`;
+      if (fee > 0) {
+        msg += `   • 🧾 *1.er Mes (con fee único Sanitas +$${formatMoney(fee)}):* $${formatMoney(firstM)}\n`;
+      }
+      if (plan.subsidyAmount) {
+        msg += `   • 🏛️ *Crédito Fiscal ACA:* ${plan.subsidyAmount}\n`;
+      }
+      msg += `   • 🛡️ *Deducible:* ${plan.deductible} | *Máximo de Bolsillo:* ${plan.moop}\n`;
       msg += `   • 🩺 *Médico Primario:* ${plan.primaryCare}\n`;
       msg += `   • 👨‍⚕️ *Especialista:* ${plan.specialist}\n`;
       msg += `   • 💊 *Medicinas:* ${plan.genericRx}\n`;
+      if (isMedMaxPlan(plan)) {
+        msg += `   • ⚠️ *Regla MedMax:* Todos los copagos aplican DESPUÉS de cumplir el deducible anual (excepto preventivo y RelyMD 24/7 a $0).\n`;
+      }
       if (plan.clientSummary) {
         msg += `   • 💡 *En palabras simples:* ${plan.clientSummary}\n`;
       }
       msg += `   • 🎁 *Beneficio extra:* ${plan.extraBenefit}\n\n`;
     });
 
-    const total = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
-    if (plans.length > 1) {
-      msg += `💵 *Total Mensual Combinado:* $${total.toFixed(2)}/mes\n\n`;
+    const total = plans.reduce((acc, p) => acc + parseMoney(p.premium), 0);
+    const totalFirst = plans.reduce((acc, p) => acc + getPlanFirstMonth(p), 0);
+    if (plans.length > 1 || totalFirst > total) {
+      if (totalFirst > total) {
+        msg += `🧾 *Total 1.er Mes (incluye fee Sanitas):* $${formatMoney(totalFirst)}\n`;
+      }
+      msg += `💵 *Total Mensual Regular:* $${formatMoney(total)}/mes\n\n`;
     }
 
     msg += `✨ *¿Por qué con Agente Contigo?*\n`;
     msg += `✔ Tu asesoría y trámite son 100% GRATUITOS.\n`;
     msg += `✔ Te verificamos tus médicos y medicinas en la red.\n`;
     msg += `✔ Asistencia continua durante todo el año.\n\n`;
-    msg += `📲 ¿Cuál de estas opciones te gustaría que dejemos activa hoy mismo?`;
+    msg += `📲 ¿Cuál de estas opciones te gustaría revisar o dejar activa hoy mismo?`;
 
     navigator.clipboard.writeText(msg);
-    onShowToast('¡Mensaje Copiado!', 'Texto persuasivo listo para pegar en WhatsApp.', 'success');
+    onShowToast('¡Mensaje Copiado!', 'Texto completo listo para pegar en WhatsApp.', 'success');
   };
 
-  // Save Quote to Supabase and Local
+  // Save Quote to Supabase and Local (INTACTO: mismas columnas y variables)
   const handleSaveQuote = async () => {
     const total = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
     const newQuote: SavedQuote = {
@@ -653,20 +1099,21 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     setSavedQuotesList(updated);
     saveQuotes(updated);
 
-    // Save to Supabase table cotizaciones if configured
     const sb = initSupabase();
     if (sb) {
       try {
-        await sb.from('cotizaciones').upsert([{
-          id: newQuote.id,
-          cliente_nombre: newQuote.clientName,
-          ubicacion: newQuote.location,
-          miembros: newQuote.members,
-          anio: newQuote.year,
-          agente: newQuote.agentName,
-          planes: newQuote.plans,
-          total_mensual: newQuote.totalMonthlyPremium
-        }]);
+        await sb.from('cotizaciones').upsert([
+          {
+            id: newQuote.id,
+            cliente_nombre: newQuote.clientName,
+            ubicacion: newQuote.location,
+            miembros: newQuote.members,
+            anio: newQuote.year,
+            agente: newQuote.agentName,
+            planes: newQuote.plans,
+            total_mensual: newQuote.totalMonthlyPremium
+          }
+        ]);
         onShowToast('¡Cotización Guardada!', 'Guardada localmente y sincronizada en Supabase.', 'success');
         return;
       } catch (e) {
@@ -699,7 +1146,6 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     setSavedQuotesList(updated);
     saveQuotes(updated);
 
-    // Also delete from Supabase if connected
     const sb = initSupabase();
     if (sb) {
       try {
@@ -716,7 +1162,11 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
   const handleClearAllQuotes = async () => {
     if (savedQuotesList.length === 0) return;
 
-    if (!window.confirm(`¿Deseas eliminar las ${savedQuotesList.length} cotizaciones guardadas del historial? Esta acción borrará todas las pruebas.`)) {
+    if (
+      !window.confirm(
+        `¿Deseas eliminar las ${savedQuotesList.length} cotizaciones guardadas del historial? Esta acción borrará todas las pruebas.`
+      )
+    ) {
       return;
     }
 
@@ -724,7 +1174,6 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
     setSavedQuotesList([]);
     saveQuotes([]);
 
-    // Delete from Supabase if connected
     const sb = initSupabase();
     if (sb && ids.length > 0) {
       try {
@@ -738,838 +1187,1248 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
   };
 
   const totalMonthly = plans.reduce((acc, p) => acc + (parseFloat(p.premium) || 0), 0);
+  const totalSanitasFee = plans.reduce((acc, p) => acc + getPlanSanitasFee(p), 0);
+  const totalFirstMonth = totalMonthly + totalSanitasFee;
+
+  // Documento Oficial Agente Contigo compartido entre #printableProposal y el modal Vista Previa
+  const renderOfficialAgenteContigoDocument = () => (
+    <div className="bg-white text-slate-900">
+      {/* Encabezado Oficial Agente Contigo (estilo Cotización Oficial) */}
+      <div className="px-6 sm:px-8 pt-6 pb-4 border-b-2 border-[#008be3]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Logo Oficial AgenteContigo */}
+          <div className="flex items-center gap-2.5">
+            <svg className="w-11 h-11 shrink-0" viewBox="0 0 100 100" fill="none">
+              <circle cx="58" cy="27" r="13" fill="#008be3" />
+              <circle cx="43" cy="33" r="10" fill="#00c9b7" />
+              <path
+                d="M42 42C29 44 24 55 24 67C24 81 37 90 53 90C67 90 77 82 77 69C77 56 69 49 61 47C56 52 50 56 42 42Z"
+                fill="#00c9b7"
+                fillOpacity="0.85"
+              />
+              <path
+                d="M53 45C63 46 72 52 74 65C70 76 60 83 48 83C36 83 31 75 31 69C31 60 41 51 53 45Z"
+                fill="#008be3"
+              />
+            </svg>
+            <div className="leading-tight">
+              <span className="text-2xl font-black tracking-tight text-[#00c9b7]">
+                Agente<span className="text-[#008be3]">Contigo</span>
+              </span>
+              <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                Asesoría Oficial en Seguros de Salud
+              </span>
+            </div>
+          </div>
+
+          {/* Título del Documento */}
+          <div className="sm:text-right">
+            <h1 className="text-lg sm:text-xl font-black text-[#005b9f] tracking-tight">
+              Cotización de Cobertura de Salud
+            </h1>
+            <p className="text-xs font-bold text-[#00a396]">
+              Propuesta de Protección Médica Familiar • Período {quoteYear}
+            </p>
+          </div>
+        </div>
+
+        {/* Barra Resumen Titular / Grupo Familiar / Asesoría */}
+        <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div>
+            <span className="font-bold text-slate-500">Titular: </span>
+            <strong className="text-slate-900 font-black">{clientName}</strong>
+          </div>
+          <div>
+            <span className="font-bold text-slate-500">Grupo Familiar: </span>
+            <strong className="text-slate-900 font-bold">
+              {clientMembers} ({clientLocation})
+            </strong>
+          </div>
+          <div>
+            <span className="font-bold text-slate-500">Asesoría: </span>
+            <strong className="text-[#008be3] font-black">
+              Agente Contigo{agentName && agentName !== 'Equipo Agente Contigo' ? ` (${agentName})` : ''}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      {/* Cuerpo de Opciones */}
+      <div className="p-6 sm:p-8 space-y-5">
+        {plans.map((plan, idx) => {
+          const regularMonthly = parseMoney(plan.premium);
+          const sanitasFee = getPlanSanitasFee(plan);
+          const firstMonth = regularMonthly + sanitasFee;
+          const isMedMax = isMedMaxPlan(plan);
+          const highlights = getPlanHighlights(plan);
+
+          return (
+            <div
+              key={plan.id}
+              className={`rounded-2xl border p-5 space-y-3 print-avoid-break ${
+                plan.isRecommended
+                  ? 'border-[#00a396] ring-1 ring-[#00c9b7]/40 bg-white shadow-sm'
+                  : 'border-slate-200 bg-white'
+              }`}
+            >
+              {/* Encabezado de la Opción */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-black text-slate-900">
+                      Opción {idx + 1}: {plan.planName}
+                    </h2>
+                    {plan.isRecommended && (
+                      <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-800 text-[10px] font-black uppercase tracking-wider">
+                        ★ Opción Recomendada
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-[#008be3]">
+                    {plan.subtitleTag || `${plan.company} • ${plan.tier}`}
+                  </p>
+                </div>
+
+                <div className="sm:text-right shrink-0">
+                  <div className="text-2xl font-black text-[#005b9f] tabular-nums leading-none">
+                    ${formatMoney(regularMonthly)}{' '}
+                    <span className="text-xs font-bold text-slate-500">/ mes</span>
+                  </div>
+                  {sanitasFee > 0 ? (
+                    <span className="text-[11px] font-extrabold text-teal-700 block mt-1">
+                      Mes regular (1.er mes: ${formatMoney(firstMonth)} con fee Sanitas +${formatMoney(sanitasFee)})
+                    </span>
+                  ) : plan.planCategory === 'aca' && plan.subsidyAmount ? (
+                    <span className="text-[11px] font-bold text-emerald-700 block mt-1">
+                      Prima con subsidio (Crédito fiscal: {plan.subsidyAmount})
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-slate-500 block mt-1">
+                      Prima mensual estimada ({clientMembers})
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Barra Obligatoria: Deducible Anual + Máximo de Bolsillo (SIEMPRE visible en todas las opciones) */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="font-bold text-slate-700">
+                    Deducible Anual: <strong className="text-slate-900">{plan.deductible || '$0'}</strong>
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="font-bold text-[#005b9f]">
+                    Máximo de Bolsillo (Out-of-Pocket Max):{' '}
+                    <strong className="text-slate-900">{plan.moop || 'Consultar detalle'}</strong>
+                  </span>
+                </div>
+                <span className="font-extrabold text-slate-900 tabular-nums shrink-0">
+                  ${formatMoney(regularMonthly)} / mes
+                </span>
+              </div>
+
+              {/* Resumen Rápido de Copagos */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                <div className="bg-cyan-50/50 border border-cyan-100 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-500 block font-semibold">Médico Primario (PCP)</span>
+                  <strong className="text-slate-900 font-extrabold">{plan.primaryCare || '$0'}</strong>
+                </div>
+                <div className="bg-cyan-50/50 border border-cyan-100 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-500 block font-semibold">Especialista</span>
+                  <strong className="text-slate-900 font-extrabold">{plan.specialist || '$0'}</strong>
+                </div>
+                <div className="bg-cyan-50/50 border border-cyan-100 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-500 block font-semibold">Medicinas Genéricas</span>
+                  <strong className="text-slate-900 font-extrabold">{plan.genericRx || '$0'}</strong>
+                </div>
+                <div className="bg-cyan-50/50 border border-cyan-100 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-500 block font-semibold">Urgencias / ER</span>
+                  <strong className="text-slate-900 font-extrabold">{plan.urgencies || '$0'}</strong>
+                </div>
+              </div>
+
+              {/* Alerta Obligatoria MedMax */}
+              {(isMedMax || plan.deductibleWarning) && (
+                <div className="bg-amber-50 border-l-4 border-amber-500 rounded-r-xl px-3.5 py-2.5 text-[11.5px] text-amber-950 font-semibold leading-snug">
+                  <strong className="uppercase tracking-wide font-black text-amber-900">
+                    ⚠️ Atención – Regla del Deducible MedMax:{' '}
+                  </strong>
+                  <span>{plan.deductibleWarning || MEDMAX_DEFAULT_WARNING}</span>
+                </div>
+              )}
+
+              {/* Viñetas Detalladas de Cobertura */}
+              {highlights.length > 0 && (
+                <ul className="space-y-1.5 text-[11.5px] text-slate-700 leading-relaxed pl-4 list-disc">
+                  {highlights.map((item, hIdx) => (
+                    <li key={hIdx}>{item}</li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Beneficio adicional si no está repetido en highlights */}
+              {plan.extraBenefit && !highlights.some(h => h.includes(plan.extraBenefit)) && (
+                <div className="text-[11px] text-slate-600 bg-slate-50/80 border border-slate-100 rounded-lg px-3 py-1.5 flex items-start gap-1.5">
+                  <span className="text-[#00a396] font-black">✓</span>
+                  <span>{plan.extraBenefit}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* CUADRO COMPARATIVO RESUMEN OBLIGATORIO AL FINAL DE TODO PDF */}
+        <div className="pt-2 print-avoid-break">
+          <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 mb-2.5">
+            CUADRO COMPARATIVO DE INVERSIÓN ({clientMembers.toUpperCase()})
+          </h3>
+          <div className="overflow-hidden rounded-xl border border-slate-300">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-300 text-slate-800">
+                  <th className="py-2.5 px-3 font-black">Alternativa de Cobertura</th>
+                  <th className="py-2.5 px-3 font-black">Estructura y Máximo de Bolsillo</th>
+                  <th className="py-2.5 px-3 font-black text-right">1.er Mes</th>
+                  <th className="py-2.5 px-3 font-black text-right">Mensualidad Regular</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {plans.map((plan, idx) => {
+                  const reg = parseMoney(plan.premium);
+                  const fee = getPlanSanitasFee(plan);
+                  const firstM = reg + fee;
+                  return (
+                    <tr key={plan.id} className={plan.isRecommended ? 'bg-teal-50/40' : 'bg-white'}>
+                      <td className="py-2.5 px-3 font-bold text-slate-900">
+                        Opción {idx + 1}: {plan.company} — {plan.planName}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600">
+                        <span className="font-semibold text-slate-800">{plan.tier}</span>
+                        <span className="block text-[11px]">
+                          Ded: {plan.deductible || '$0'} • Máx. Bolsillo: <strong>{plan.moop || 'Consultar'}</strong>
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-black text-[#005b9f] tabular-nums">
+                        ${formatMoney(firstM)}
+                        {fee > 0 && (
+                          <span className="block text-[10px] font-bold text-teal-700">
+                            (incl. +${formatMoney(fee)} Sanitas)
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-black text-slate-900 tabular-nums">
+                        ${formatMoney(reg)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {(plans.length > 1 || totalSanitasFee > 0) && (
+                  <tr className="bg-cyan-50/60 border-t-2 border-[#008be3]/40">
+                    <td className="py-2.5 px-3 font-black text-[#005b9f]" colSpan={2}>
+                      Total Combinado Estimado ({plans.length} {plans.length === 1 ? 'plan' : 'planes'})
+                      {totalSanitasFee > 0 && (
+                        <span className="text-[11px] font-bold text-teal-700 ml-2">
+                          • Fee único inscripción Sanitas 1.er mes: +${formatMoney(totalSanitasFee)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-black text-[#005b9f] tabular-nums">
+                      ${formatMoney(totalFirstMonth)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-black text-slate-900 tabular-nums">
+                      ${formatMoney(totalMonthly)}/mes
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Nota de Asesoría */}
+        <div className="bg-slate-50 border-l-4 border-[#008be3] rounded-r-xl px-4 py-2.5 text-[11px] text-slate-600 print-avoid-break">
+          <strong className="text-slate-800">Información de asesoría: </strong>
+          Cotización elaborada específicamente para {clientName} ({clientMembers} • {clientLocation}). Las coberturas y
+          tarifas se rigen según las condiciones de suscripción de cada compañía aseguradora.
+        </div>
+      </div>
+
+      {/* Footer Oficial Agente Contigo */}
+      <div className="py-3 px-6 sm:px-8 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+        <span className="font-bold text-[#008be3]">
+          Agente Contigo • Cotización Personalizada de Salud
+        </span>
+        <span className="font-semibold text-slate-400">
+          Asesoría 100% Gratuita • Período {quoteYear}
+        </span>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
       {/* Top Banner & Fast Actions */}
       {!isPrinting && (
         <>
-          <div id="quoterTopBanner" className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-teal-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print quoter-edit-section">
-        <div>
-          <span className="px-3 py-1 bg-teal-500/20 text-teal-300 border border-teal-500/30 rounded-full text-[10px] font-black uppercase tracking-wider inline-block mb-2">
-            Módulo Oficial de Cotización
-          </span>
-          <h2 className="text-xl font-black text-white flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-teal-400" />
-            Cotizador Inteligente Multicompañía con IA
-          </h2>
-          <p className="text-xs text-teal-200/80 mt-1">
-            Genera propuestas oficiales, sube capturas para leer con IA y conecta con Google Search.
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {/* AI Connection Status button */}
-          <button
-            type="button"
-            onClick={() => setShowApiKeyModal(true)}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition border border-slate-700 flex items-center gap-2 shadow cursor-pointer"
-          >
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                geminiApiKey ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
-              }`}
-            ></span>
-            <span className="font-bold">
-              {geminiApiKey ? 'IA Conectada' : 'Configurar Conexión IA'}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={copyShortTextMessage}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
-            title="Copiar mensaje de texto SMS resumido para enviar al cliente"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Copiar Mensaje SMS</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={copyWhatsAppMessage}
-            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
-            title="Copiar formato completo para WhatsApp"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span>Copiar para WhatsApp</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowPrintModal(true)}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl font-bold transition flex items-center gap-1.5 border border-cyan-800 shadow cursor-pointer"
-            title="Ver vista previa limpia de la cotización que se imprimirá"
-          >
-            <Eye className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Vista Previa</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePrintProposal}
-            className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white rounded-xl font-extrabold transition flex items-center gap-1.5 shadow-lg cursor-pointer"
-            title="Imprimir únicamente la cotización resumida en PDF"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Imprimir / Guardar PDF</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSaveQuote}
-            className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>Guardar</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Grid: Prospect Data & Image OCR */}
-      <div id="quoterProspectAndUploadGrid" className="grid grid-cols-1 lg:grid-cols-12 gap-5 no-print quoter-edit-section">
-        {/* Panel 1: Datos del Prospecto */}
-        <div id="quoterProspectPanel" className="lg:col-span-4 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <div className="w-7 h-7 rounded-xl bg-cyan-100/70 text-[#00c9b7] flex items-center justify-center font-bold text-xs">
-              1
-            </div>
-            <div>
-              <h2 className="text-sm font-extrabold text-slate-900">Datos del Prospecto</h2>
-              <p className="text-[11px] text-slate-500">Aparecerán en la propuesta final</p>
-            </div>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="block font-bold uppercase text-slate-600 mb-1">Nombre Completo</label>
-              <input
-                type="text"
-                value={clientName}
-                onChange={e => setClientName(e.target.value)}
-                placeholder="Ej. Familia Ramírez / Virginia García"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block font-bold uppercase text-slate-600 mb-1">Estado / Zip</label>
-                <input
-                  type="text"
-                  value={clientLocation}
-                  onChange={e => setClientLocation(e.target.value)}
-                  placeholder="Ej. Florida (33166)"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
-                />
-              </div>
-              <div>
-                <label className="block font-bold uppercase text-slate-600 mb-1">Miembros</label>
-                <input
-                  type="text"
-                  value={clientMembers}
-                  onChange={e => setClientMembers(e.target.value)}
-                  placeholder="Ej. 3 Personas"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block font-bold uppercase text-slate-600 mb-1">Año de Cobertura</label>
-                <input
-                  type="text"
-                  value={quoteYear}
-                  onChange={e => setQuoteYear(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
-                />
-              </div>
-              <div>
-                <label className="block font-bold uppercase text-slate-600 mb-1">Agente Asignado</label>
-                <input
-                  type="text"
-                  value={agentName}
-                  onChange={e => setAgentName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-cyan-50/60 p-3 rounded-2xl border border-cyan-100 text-[11px] text-slate-600 leading-relaxed">
-            <strong className="text-[#008be3] font-bold">Consejo de Agente:</strong> Sube una o varias capturas de las compañías (Obamacare, United, Manhattan, etc.) y nuestro motor IA completará la propuesta automáticamente.
-          </div>
-        </div>
-
-        {/* Panel 2: Subida Inteligente & Visión IA */}
-        <div id="quoterUploadOcrPanel" className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-blue-100/70 text-[#008be3] flex items-center justify-center font-bold text-xs">
-                2
-              </div>
-              <div>
-                <h2 className="text-sm font-extrabold text-slate-900">
-                  Subir Capturas de los Cotizadores
-                </h2>
-                <p className="text-[11px] text-slate-500">
-                  Arrastra o pega (<kbd className="px-1 py-0.5 bg-slate-100 border rounded font-mono">Ctrl + V</kbd>) capturas de los planes
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={addManualPlan}
-              className="text-xs font-bold text-[#008be3] hover:text-[#00c9b7] flex items-center gap-1 transition-colors self-start sm:self-auto cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Agregar Plan Manual</span>
-            </button>
-          </div>
-
-          {/* Dropzone */}
           <div
-            onDragOver={e => e.preventDefault()}
-            onDrop={handleDrop}
-            className="border-2 border-dashed border-slate-300 hover:border-[#00c9b7] bg-slate-50/60 hover:bg-cyan-50/20 rounded-2xl p-6 text-center transition-all cursor-pointer relative"
+            id="quoterTopBanner"
+            className="bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 p-6 rounded-2xl text-white shadow-xl border border-teal-900/50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print quoter-edit-section"
           >
-            <input
-              type="file"
-              accept="image/*,application/pdf,.pdf"
-              multiple
-              onChange={e => e.target.files && processIncomingFiles(Array.from(e.target.files))}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-            />
-            <div className="flex flex-col items-center justify-center gap-2 pointer-events-none">
-              <div className="w-10 h-10 rounded-full bg-cyan-100/80 flex items-center justify-center text-[#00c9b7]">
-                <Upload className="w-5 h-5" />
-              </div>
-              <p className="text-xs font-bold text-slate-800">
-                Haz clic para subir o arrastra tus capturas o documentos PDF aquí
-              </p>
-              <p className="text-[11px] text-slate-400">
-                💡 Acepta capturas (PNG, JPG) o folletos/cotizaciones oficiales en PDF. También puedes pegar (<kbd className="px-1 bg-slate-200 rounded font-bold">Ctrl + V</kbd>).
-              </p>
-            </div>
-          </div>
-
-          {/* Thumbnails */}
-          {uploadedFiles.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {uploadedFiles.map((file, idx) => (
-                <div key={idx} className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100 shrink-0">
-                  {file.mimeType?.includes('pdf') || file.name.toLowerCase().endsWith('.pdf') ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 p-1 text-center">
-                      <FileText className="w-7 h-7 text-rose-500 mb-0.5" />
-                      <span className="text-[9px] font-black text-rose-800 line-clamp-1 break-all px-0.5">
-                        {file.name.slice(0, 10)}
-                      </span>
-                    </div>
-                  ) : (
-                    <img src={file.dataUrl} alt={file.name} className="w-full h-full object-cover" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeFile(idx)}
-                    className="absolute top-1 right-1 w-5 h-5 bg-rose-600 text-white rounded-full flex items-center justify-center text-xs opacity-90 hover:opacity-100 shadow transition cursor-pointer"
-                    title="Remover archivo"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Google Search Toggle */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
-              <input
-                type="checkbox"
-                checked={enableWebSearch}
-                onChange={e => setEnableWebSearch(e.target.checked)}
-                className="w-4 h-4 rounded text-[#00c9b7] focus:ring-[#00c9b7]"
-              />
-              <span className="flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-emerald-600" />
-                Conectar a Internet (Google Search en vivo)
+            <div>
+              <span className="px-3 py-1 bg-teal-500/20 text-teal-300 border border-teal-500/30 rounded-full text-[10px] font-black uppercase tracking-wider inline-block mb-2">
+                Módulo Oficial de Cotización • Agente Contigo
               </span>
-            </label>
-            <span className="text-[11px] text-slate-500">
-              Busca en la web folletos oficiales de planes como ManhattanLife, UHC, etc., para completar beneficios.
-            </span>
-          </div>
-
-          {/* AI Trigger */}
-          <div className="flex items-center justify-between pt-2 text-xs">
-            <div className="font-semibold text-slate-500 flex items-center gap-2">
-              <span>{aiStatusText}</span>
+              <h2 className="text-xl font-black text-white flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-teal-400" />
+                Cotizador Inteligente Multicompañía con IA
+              </h2>
+              <p className="text-xs text-teal-200/80 mt-1">
+                Genera propuestas oficiales Agente Contigo en PDF, usa plantillas preconfiguradas y redacta correos al cliente.
+              </p>
             </div>
 
-            <button
-              type="button"
-              disabled={uploadedFiles.length === 0 || isAnalyzingAI}
-              onClick={processImagesWithAI}
-              className="px-5 py-2.5 font-extrabold text-white bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 rounded-xl shadow-md transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-            >
-              {isAnalyzingAI ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Analizando con IA...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-white" />
-                  <span>Extraer Datos con IA</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Panel 3: Planes a Presentar al Cliente Editor */}
-      <div id="quoterPlanEditorPanel" className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#00c9b7]"></span>
-            Planes a Presentar al Cliente ({plans.length})
-          </h3>
-          <p className="text-xs text-slate-400">Puedes editar cualquier número o texto en vivo</p>
-        </div>
-
-        {plans.length === 0 ? (
-          <div className="text-center py-8 text-slate-400 text-xs">
-            No hay planes agregados aún. Sube una captura o haz clic en "+ Agregar Plan Manual".
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {plans.map((plan, index) => (
-              <div
-                key={plan.id}
-                className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3 text-xs"
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowApiKeyModal(true)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl transition border border-slate-700 flex items-center gap-2 shadow cursor-pointer"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-[#00c9b7] text-white flex items-center justify-center text-xs font-bold">
-                      {index + 1}
-                    </span>
-                    <input
-                      type="text"
-                      value={plan.company}
-                      onChange={e => updatePlan(plan.id, 'company', e.target.value)}
-                      placeholder="Compañía (ej. UnitedHealthcare)"
-                      className="font-black text-slate-900 text-xs sm:text-sm bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#008be3] outline-none"
-                    />
-                  </div>
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    geminiApiKey ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                  }`}
+                ></span>
+                <span className="font-bold">{geminiApiKey ? 'IA Conectada' : 'Configurar IA'}</span>
+              </button>
 
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={plan.isRecommended}
-                        onChange={e => updatePlan(plan.id, 'isRecommended', e.target.checked)}
-                        className="rounded text-[#00c9b7] focus:ring-[#00c9b7]"
-                      />
-                      <span className="font-bold text-[11px]">Recomendado</span>
-                    </label>
+              <button
+                type="button"
+                onClick={() => openEmailGenerator()}
+                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-black transition flex items-center gap-1.5 shadow cursor-pointer"
+                title="Generar y copiar correo profesional para el cliente (Privado / ACA)"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Generar Correo</span>
+              </button>
 
-                    <button
-                      type="button"
-                      onClick={() => deletePlan(plan.id)}
-                      className="text-slate-400 hover:text-red-500 p-1 text-xs transition"
-                      title="Eliminar este plan"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+              <button
+                type="button"
+                onClick={copyShortTextMessage}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+                title="Copiar mensaje de texto SMS resumido para enviar al cliente"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>SMS</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={copyWhatsAppMessage}
+                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+                title="Copiar formato completo para WhatsApp"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl font-bold transition flex items-center gap-1.5 border border-cyan-800 shadow cursor-pointer"
+                title="Ver vista previa limpia de la cotización oficial Agente Contigo"
+              >
+                <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Vista Previa</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintProposal}
+                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white rounded-xl font-extrabold transition flex items-center gap-1.5 shadow-lg cursor-pointer"
+                title="Imprimir únicamente la cotización oficial Agente Contigo en PDF"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Imprimir / PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveQuote}
+                className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold transition flex items-center gap-1.5 shadow cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Guardar</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Grid: Prospect Data & Image OCR */}
+          <div
+            id="quoterProspectAndUploadGrid"
+            className="grid grid-cols-1 lg:grid-cols-12 gap-5 no-print quoter-edit-section"
+          >
+            {/* Panel 1: Datos del Prospecto */}
+            <div
+              id="quoterProspectPanel"
+              className="lg:col-span-4 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section"
+            >
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <div className="w-7 h-7 rounded-xl bg-cyan-100/70 text-[#00c9b7] flex items-center justify-center font-bold text-xs">
+                  1
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-500">Nombre del Plan</label>
-                    <input
-                      type="text"
-                      value={plan.planName}
-                      onChange={e => updatePlan(plan.id, 'planName', e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#00c9b7] outline-none font-medium"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-500">Prima Mensual ($/mes)</label>
-                    <input
-                      type="text"
-                      value={plan.premium}
-                      onChange={e => updatePlan(plan.id, 'premium', e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#00c9b7] outline-none font-bold text-[#008be3]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-500">Nivel / Categoría</label>
-                    <input
-                      type="text"
-                      value={plan.tier}
-                      onChange={e => updatePlan(plan.id, 'tier', e.target.value)}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#00c9b7] outline-none font-medium"
-                    />
-                  </div>
-                </div>
-
-                {/* Copay & Deductibles row */}
-                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400">Deducible</label>
-                    <input
-                      type="text"
-                      value={plan.deductible}
-                      onChange={e => updatePlan(plan.id, 'deductible', e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400">Máx. Bolsillo</label>
-                    <input
-                      type="text"
-                      value={plan.moop}
-                      onChange={e => updatePlan(plan.id, 'moop', e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400">Dr. Primario</label>
-                    <input
-                      type="text"
-                      value={plan.primaryCare}
-                      onChange={e => updatePlan(plan.id, 'primaryCare', e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400">Especialista</label>
-                    <input
-                      type="text"
-                      value={plan.specialist}
-                      onChange={e => updatePlan(plan.id, 'specialist', e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400">Med. Genérica</label>
-                    <input
-                      type="text"
-                      value={plan.genericRx}
-                      onChange={e => updatePlan(plan.id, 'genericRx', e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400">Urgencias</label>
-                    <input
-                      type="text"
-                      value={plan.urgencies}
-                      onChange={e => updatePlan(plan.id, 'urgencies', e.target.value)}
-                      className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
-                    />
-                  </div>
-                </div>
-
-                {/* Explicación Sencilla con IA */}
-                <div className="bg-cyan-50/50 p-2.5 rounded-xl border border-cyan-100/70 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-[#008be3] uppercase flex items-center gap-1">
-                      <span>💡</span> Explicación Sencilla para el Cliente (1-2 oraciones)
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => generatePlanSummaryWithAI(plan.id)}
-                      className="text-[11px] font-bold text-[#008be3] hover:text-[#00c9b7] flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Redactar con IA</span>
-                    </button>
-                  </div>
-                  <textarea
-                    rows={2}
-                    value={plan.clientSummary}
-                    onChange={e => updatePlan(plan.id, 'clientSummary', e.target.value)}
-                    placeholder="Ej. Con este plan tienes médico primario gratis y pagas $0 al mes..."
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-cyan-200/80 rounded-lg font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#00c9b7]"
-                  />
-                </div>
-
-                {/* Beneficio Extra & Search online */}
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Beneficio Adicional o Coberturas Clave</label>
-                    <button
-                      type="button"
-                      onClick={() => searchPlanBenefitsOnline(plan.id)}
-                      className="text-[11px] font-bold text-[#008be3] hover:text-[#00c9b7] flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>Buscar folleto oficial en Google</span>
-                    </button>
-                  </div>
+                  <h2 className="text-sm font-extrabold text-slate-900">Datos del Prospecto</h2>
+                  <p className="text-[11px] text-slate-500">Aparecerán en la propuesta oficial y correo</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-bold uppercase text-slate-600 mb-1">Nombre Completo</label>
                   <input
                     type="text"
-                    value={plan.extraBenefit}
-                    onChange={e => updatePlan(plan.id, 'extraBenefit', e.target.value)}
-                    className="w-full px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-700"
+                    value={clientName}
+                    onChange={e => setClientName(e.target.value)}
+                    placeholder="Ej. Nelson Díaz / Familia Ramírez"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold uppercase text-slate-600 mb-1">Estado / Zip</label>
+                    <input
+                      type="text"
+                      value={clientLocation}
+                      onChange={e => setClientLocation(e.target.value)}
+                      placeholder="Ej. Florida (33166)"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold uppercase text-slate-600 mb-1">Grupo Familiar</label>
+                    <input
+                      type="text"
+                      value={clientMembers}
+                      onChange={e => setClientMembers(e.target.value)}
+                      placeholder="Ej. Pareja (2 Adultos) + 1 Niño"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-bold uppercase text-slate-600 mb-1">Año de Cobertura</label>
+                    <input
+                      type="text"
+                      value={quoteYear}
+                      onChange={e => setQuoteYear(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold uppercase text-slate-600 mb-1">Agente Asignado</label>
+                    <input
+                      type="text"
+                      value={agentName}
+                      onChange={e => setAgentName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#00c9b7] outline-none font-medium text-xs"
+                    />
+                  </div>
+                </div>
               </div>
-            ))}
+
+              <div className="bg-cyan-50/60 p-3 rounded-2xl border border-cyan-100 text-[11px] text-slate-600 leading-relaxed">
+                <strong className="text-[#008be3] font-bold">Formato Oficial Agente Contigo:</strong> Usa los selectores
+                rápidos de abajo o sube capturas para generar el PDF con <strong>Máximo de Bolsillo</strong> y{' '}
+                <strong>Cuadro Comparativo</strong> automático.
+              </div>
+            </div>
+
+            {/* Panel 2: Subida Inteligente & Visión IA */}
+            <div
+              id="quoterUploadOcrPanel"
+              className="lg:col-span-8 bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-blue-100/70 text-[#008be3] flex items-center justify-center font-bold text-xs">
+                    2
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-extrabold text-slate-900">Subir Capturas de los Cotizadores</h2>
+                    <p className="text-[11px] text-slate-500">
+                      Arrastra o pega (<kbd className="px-1 py-0.5 bg-slate-100 border rounded font-mono">Ctrl + V</kbd>)
+                      capturas de los planes
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={addManualPlan}
+                  className="text-xs font-bold text-[#008be3] hover:text-[#00c9b7] flex items-center gap-1 transition-colors self-start sm:self-auto cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Agregar Plan Manual</span>
+                </button>
+              </div>
+
+              {/* Dropzone */}
+              <div
+                onDragOver={e => e.preventDefault()}
+                onDrop={handleDrop}
+                className="border-2 border-dashed border-slate-300 hover:border-[#00c9b7] bg-slate-50/60 hover:bg-cyan-50/20 rounded-2xl p-5 text-center transition-all cursor-pointer relative"
+              >
+                <input
+                  type="file"
+                  accept="image/*,application/pdf,.pdf"
+                  multiple
+                  onChange={e => e.target.files && processIncomingFiles(Array.from(e.target.files))}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+                <div className="flex flex-col items-center justify-center gap-2 pointer-events-none">
+                  <div className="w-10 h-10 rounded-full bg-cyan-100/80 flex items-center justify-center text-[#00c9b7]">
+                    <Upload className="w-5 h-5" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-800">
+                    Haz clic para subir o arrastra tus capturas o documentos PDF aquí
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    💡 Acepta capturas (PNG, JPG) o folletos/cotizaciones oficiales en PDF. También puedes pegar (
+                    <kbd className="px-1 bg-slate-200 rounded font-bold">Ctrl + V</kbd>).
+                  </p>
+                </div>
+              </div>
+
+              {/* Thumbnails */}
+              {uploadedFiles.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {uploadedFiles.map((file, idx) => (
+                    <div
+                      key={idx}
+                      className="relative group w-20 h-20 rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100 shrink-0"
+                    >
+                      {file.mimeType?.includes('pdf') || file.name.toLowerCase().endsWith('.pdf') ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 p-1 text-center">
+                          <FileText className="w-7 h-7 text-rose-500 mb-0.5" />
+                          <span className="text-[9px] font-black text-rose-800 line-clamp-1 break-all px-0.5">
+                            {file.name.slice(0, 10)}
+                          </span>
+                        </div>
+                      ) : (
+                        <img src={file.dataUrl} alt={file.name} className="w-full h-full object-cover" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeFile(idx)}
+                        className="absolute top-1 right-1 w-5 h-5 bg-rose-600 text-white rounded-full flex items-center justify-center text-xs opacity-90 hover:opacity-100 shadow transition cursor-pointer"
+                        title="Remover archivo"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Google Search Toggle */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={enableWebSearch}
+                    onChange={e => setEnableWebSearch(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#00c9b7] focus:ring-[#00c9b7]"
+                  />
+                  <span className="flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-emerald-600" />
+                    Conectar a Internet (Google Search en vivo)
+                  </span>
+                </label>
+                <span className="text-[11px] text-slate-500">
+                  Verifica beneficios oficiales de planes ACA, UHC, First Health, MedMax y más.
+                </span>
+              </div>
+
+              {/* AI Trigger */}
+              <div className="flex items-center justify-between pt-1 text-xs">
+                <div className="font-semibold text-slate-500 flex items-center gap-2">
+                  <span>{aiStatusText}</span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={uploadedFiles.length === 0 || isAnalyzingAI}
+                  onClick={processImagesWithAI}
+                  className="px-5 py-2.5 font-extrabold text-white bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 rounded-xl shadow-md transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isAnalyzingAI ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Analizando con IA...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-white" />
+                      <span>Extraer Datos con IA</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Barra de Selectores Rápidos: Plantillas Oficiales Preconfiguradas */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-3 no-print quoter-edit-section">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">
+                    Selectores Rápidos de Planes Oficiales (Agente Contigo)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Haz clic para agregar un plan preconfigurado con sus beneficios exactos, alertas y cálculos automáticos.
+                  </p>
+                </div>
+              </div>
+
+              {plans.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPlans([])}
+                  className="text-[11px] font-bold text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 transition cursor-pointer self-start sm:self-auto"
+                >
+                  Vaciar Lista Actual ({plans.length})
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+              {PLAN_TEMPLATES.map(tpl => (
+                <button
+                  key={tpl.category}
+                  type="button"
+                  onClick={() => addTemplatePlan(tpl)}
+                  className={`p-3 rounded-2xl border text-left transition shadow-xs cursor-pointer flex flex-col justify-between gap-1 ${tpl.accentColor}`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-black text-xs">+ {tpl.shortLabel}</span>
+                    <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                  </div>
+                  <span className="text-[10px] font-bold opacity-80">{tpl.badgeText}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Panel 3: Planes a Presentar al Cliente Editor */}
+          <div
+            id="quoterPlanEditorPanel"
+            className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#00c9b7]"></span>
+                Planes a Presentar al Cliente ({plans.length})
+              </h3>
+              <div className="flex items-center gap-3 text-xs">
+                {totalSanitasFee > 0 && (
+                  <span className="px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 font-bold">
+                    1.er Mes (+Fee Sanitas): ${formatMoney(totalFirstMonth)}
+                  </span>
+                )}
+                <span className="text-slate-400 hidden sm:inline">Puedes editar cualquier número o texto en vivo</span>
+              </div>
+            </div>
+
+            {plans.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-xs">
+                No hay planes agregados aún. Selecciona una plantilla rápida arriba, sube una captura o haz clic en "+ Agregar Plan Manual".
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {plans.map((plan, index) => {
+                  const sanitasFee = getPlanSanitasFee(plan);
+                  const firstMonthVal = getPlanFirstMonth(plan);
+                  const isMedMax = isMedMaxPlan(plan);
+
+                  return (
+                    <div
+                      key={plan.id}
+                      className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3 text-xs"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                          <span className="w-6 h-6 rounded-lg bg-[#00c9b7] text-white flex items-center justify-center text-xs font-bold shrink-0">
+                            {index + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={plan.company}
+                            onChange={e => updatePlan(plan.id, 'company', e.target.value)}
+                            placeholder="Compañía (ej. UnitedHealthcare)"
+                            className="font-black text-slate-900 text-xs sm:text-sm bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#008be3] outline-none w-full"
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <select
+                            value={plan.planCategory || 'custom'}
+                            onChange={e => updatePlan(plan.id, 'planCategory', e.target.value as QuotePlanCategory)}
+                            className="px-2 py-1 text-[11px] font-bold bg-white border border-slate-200 rounded-lg text-slate-700 outline-none"
+                            title="Tipo de plantilla del plan"
+                          >
+                            <option value="custom">Personalizado</option>
+                            <option value="medmax">MedMax (Tras Deducible)</option>
+                            <option value="hpg4000">HPG Preferred 4000</option>
+                            <option value="ahw4">AHW 4 (First Health)</option>
+                            <option value="sanitas_bundle">Sanitas Care + HospitalWise</option>
+                            <option value="aca">Plan ACA (Obamacare)</option>
+                          </select>
+
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={plan.isRecommended}
+                              onChange={e => updatePlan(plan.id, 'isRecommended', e.target.checked)}
+                              className="rounded text-[#00c9b7] focus:ring-[#00c9b7]"
+                            />
+                            <span className="font-bold text-[11px]">Recomendado</span>
+                          </label>
+
+                          <button
+                            type="button"
+                            onClick={() => deletePlan(plan.id)}
+                            className="text-slate-400 hover:text-red-500 p-1 text-xs transition cursor-pointer"
+                            title="Eliminar este plan"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-slate-500">Nombre del Plan</label>
+                          <input
+                            type="text"
+                            value={plan.planName}
+                            onChange={e => updatePlan(plan.id, 'planName', e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#00c9b7] outline-none font-medium"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-slate-500">
+                            {plan.planCategory === 'aca' ? 'Prima con Subsidio ($/mes)' : 'Prima Mensual Regular ($/mes)'}
+                          </label>
+                          <input
+                            type="text"
+                            value={plan.premium}
+                            onChange={e => updatePlan(plan.id, 'premium', e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#00c9b7] outline-none font-bold text-[#008be3]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-slate-500">Nivel / Categoría</label>
+                          <input
+                            type="text"
+                            value={plan.tier}
+                            onChange={e => updatePlan(plan.id, 'tier', e.target.value)}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:ring-1 focus:ring-[#00c9b7] outline-none font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Fila de Costos y Copagos (incluye Máximo de Bolsillo obligatorio) */}
+                      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400">Deducible</label>
+                          <input
+                            type="text"
+                            value={plan.deductible}
+                            onChange={e => updatePlan(plan.id, 'deductible', e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-[#005b9f]">Máximo de Bolsillo *</label>
+                          <input
+                            type="text"
+                            value={plan.moop}
+                            onChange={e => updatePlan(plan.id, 'moop', e.target.value)}
+                            placeholder="$1,500"
+                            className="w-full px-2 py-1 text-xs bg-white border border-sky-200 rounded-lg font-bold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400">
+                            {plan.planCategory === 'aca' ? 'Dr. Primario (Día 1)' : 'Dr. Primario'}
+                          </label>
+                          <input
+                            type="text"
+                            value={plan.primaryCare}
+                            onChange={e => updatePlan(plan.id, 'primaryCare', e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400">
+                            {plan.planCategory === 'aca' ? 'Especialista (Día 1)' : 'Especialista'}
+                          </label>
+                          <input
+                            type="text"
+                            value={plan.specialist}
+                            onChange={e => updatePlan(plan.id, 'specialist', e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400">
+                            {plan.planCategory === 'aca' ? 'Genéricos (Día 1)' : 'Med. Genérica'}
+                          </label>
+                          <input
+                            type="text"
+                            value={plan.genericRx}
+                            onChange={e => updatePlan(plan.id, 'genericRx', e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400">Urgencias / ER</label>
+                          <input
+                            type="text"
+                            value={plan.urgencies}
+                            onChange={e => updatePlan(plan.id, 'urgencies', e.target.value)}
+                            className="w-full px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg font-semibold"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Opciones Especiales según Plan (Sanitas Fee $40 / ACA Subsidio / Alerta MedMax) */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-teal-800">
+                            <input
+                              type="checkbox"
+                              checked={sanitasFee > 0}
+                              onChange={e => {
+                                updatePlan(plan.id, 'hasSanitasFee', e.target.checked);
+                              }}
+                              className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>Sumar Fee Único de Inscripción Sanitas (+$40.00 en 1.er Mes)</span>
+                          </label>
+
+                          {sanitasFee > 0 && (
+                            <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-900 font-black text-[11px] tabular-nums">
+                              Total 1.er Mes: ${formatMoney(firstMonthVal)}
+                            </span>
+                          )}
+                        </div>
+
+                        {plan.planCategory === 'aca' && (
+                          <div className="flex items-center gap-2">
+                            <label className="text-[10px] font-bold uppercase text-emerald-700">
+                              Crédito Fiscal ACA:
+                            </label>
+                            <input
+                              type="text"
+                              value={plan.subsidyAmount || ''}
+                              onChange={e => updatePlan(plan.id, 'subsidyAmount', e.target.value)}
+                              placeholder="Ej. $485.00/mes"
+                              className="px-2 py-1 text-xs bg-emerald-50 border border-emerald-200 rounded-lg font-bold text-emerald-900 w-36 outline-none"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Alerta Explícita Editable para MedMax */}
+                      {(isMedMax || plan.deductibleWarning) && (
+                        <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 space-y-1">
+                          <label className="text-[10px] font-black uppercase text-amber-900 flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            Alerta Obligatoria MedMax (Copagos Tras Deducible):
+                          </label>
+                          <input
+                            type="text"
+                            value={plan.deductibleWarning || MEDMAX_DEFAULT_WARNING}
+                            onChange={e => updatePlan(plan.id, 'deductibleWarning', e.target.value)}
+                            className="w-full px-2.5 py-1 text-xs bg-white border border-amber-300 rounded-lg font-semibold text-amber-950 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {/* Viñetas Detalladas (para PDF Oficial Agente Contigo) */}
+                      {Array.isArray(plan.highlights) && plan.highlights.length > 0 && (
+                        <div className="bg-slate-100/80 p-2.5 rounded-xl border border-slate-200 space-y-1">
+                          <label className="text-[10px] font-bold uppercase text-slate-600 block">
+                            Desglose de Beneficios en PDF (1 línea por viñeta):
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={plan.highlights.join('\n')}
+                            onChange={e =>
+                              updatePlan(
+                                plan.id,
+                                'highlights',
+                                e.target.value.split('\n').filter(line => line.trim().length > 0)
+                              )
+                            }
+                            className="w-full px-2.5 py-1.5 text-[11px] bg-white border border-slate-200 rounded-lg font-medium text-slate-700 outline-none"
+                          />
+                        </div>
+                      )}
+
+                      {/* Explicación Sencilla con IA */}
+                      <div className="bg-cyan-50/50 p-2.5 rounded-xl border border-cyan-100/70 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-[#008be3] uppercase flex items-center gap-1">
+                            <span>💡</span> Explicación Sencilla para el Cliente (1-2 oraciones)
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => generatePlanSummaryWithAI(plan.id)}
+                            className="text-[11px] font-bold text-[#008be3] hover:text-[#00c9b7] flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Redactar con IA</span>
+                          </button>
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={plan.clientSummary}
+                          onChange={e => updatePlan(plan.id, 'clientSummary', e.target.value)}
+                          placeholder="Ej. Con este plan tienes médico primario gratis y pagas $0 al mes..."
+                          className="w-full px-2.5 py-1.5 text-xs bg-white border border-cyan-200/80 rounded-lg font-medium text-slate-700 outline-none focus:ring-1 focus:ring-[#00c9b7]"
+                        />
+                      </div>
+
+                      {/* Beneficio Extra & Search online */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase">
+                            Beneficio Adicional o Coberturas Clave
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => searchPlanBenefitsOnline(plan.id)}
+                            className="text-[11px] font-bold text-[#008be3] hover:text-[#00c9b7] flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Globe className="w-3.5 h-3.5" />
+                            <span>Buscar folleto oficial en Google</span>
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={plan.extraBenefit}
+                          onChange={e => updatePlan(plan.id, 'extraBenefit', e.target.value)}
+                          className="w-full px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg font-medium text-slate-700"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </>
       )}
 
-      {/* Panel 4: PROPUESTA PERSONALIZADA IMPRIMIBLE (FLYER) */}
-      <div id="printableProposal" className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden print:shadow-none print:border-none">
-        {/* Header con Logo y Título */}
-        <div className="pt-8 pb-6 px-4 sm:px-8 text-center relative overflow-hidden bg-gradient-to-b from-cyan-50/50 via-white to-white border-b border-slate-100">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <svg className="w-12 h-12" viewBox="0 0 100 100" fill="none">
-              <circle cx="58" cy="27" r="13" fill="#008be3" />
-              <circle cx="43" cy="33" r="10" fill="#00c9b7" />
-              <path d="M42 42C29 44 24 55 24 67C24 81 37 90 53 90C67 90 77 82 77 69C77 56 69 49 61 47C56 52 50 56 42 42Z" fill="#00c9b7" fillOpacity="0.85" />
-              <path d="M53 45C63 46 72 52 74 65C70 76 60 83 48 83C36 83 31 75 31 69C31 60 41 51 53 45Z" fill="#008be3" />
-            </svg>
-            <div className="text-left leading-none">
-              <span className="text-3xl font-black tracking-tight text-[#00c9b7]">
-                Agente<span className="text-[#008be3]">Contigo</span>
-              </span>
-            </div>
-          </div>
-
-          <div className="inline-block bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white px-8 sm:px-12 py-2.5 rounded-2xl shadow-sm mb-2">
-            <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-white">
-              PROPUESTA PERSONALIZADA DE SEGURO MÉDICO
-            </h1>
-          </div>
-
-          <p className="text-xs sm:text-sm font-bold text-slate-600 mt-1">
-            Cobertura y Beneficios Seleccionados • Período <span className="text-[#008be3]">{quoteYear}</span>
-          </p>
-
-          {/* Ficha Resumen del Cliente */}
-          <div className="max-w-3xl mx-auto mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50/90 rounded-2xl p-3.5 border border-slate-200/80 text-left text-xs">
-            <div>
-              <span className="block text-[10px] uppercase font-bold text-slate-400">Cliente</span>
-              <span className="font-black text-slate-800 text-sm truncate block">{clientName}</span>
-            </div>
-            <div>
-              <span className="block text-[10px] uppercase font-bold text-slate-400">Ubicación</span>
-              <span className="font-bold text-slate-700 block truncate">{clientLocation}</span>
-            </div>
-            <div>
-              <span className="block text-[10px] uppercase font-bold text-slate-400">Integrantes</span>
-              <span className="font-bold text-slate-700 block">{clientMembers}</span>
-            </div>
-            <div>
-              <span className="block text-[10px] uppercase font-bold text-slate-400">Asesor de Confianza</span>
-              <span className="font-bold text-[#008be3] block truncate">{agentName}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tarjetas Comparativas de Planes */}
-        <div className="p-4 sm:p-8 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {plans.map((plan, idx) => (
-              <div
-                key={plan.id}
-                className={`relative rounded-3xl border overflow-hidden flex flex-col justify-between transition-all print-avoid-break ${
-                  plan.isRecommended
-                    ? 'border-[#00c9b7] ring-2 ring-[#00c9b7]/30 shadow-lg bg-white'
-                    : 'border-slate-200 shadow-sm bg-white'
-                }`}
-              >
-                {/* Tag Superior */}
-                <div
-                  className={`py-2 px-4 text-[11px] font-black tracking-wider uppercase flex items-center justify-between ${
-                    plan.isRecommended
-                      ? 'bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white'
-                      : 'bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  <span>{plan.isRecommended ? '★ OPCIÓN RECOMENDADA' : 'OPCIÓN DE COBERTURA'}</span>
-                  <span className="text-[10px] opacity-90">{plan.tier}</span>
-                </div>
-
-                {/* Contenido */}
-                <div className="p-5 flex-1 space-y-4 text-xs">
-                  <div>
-                    <span className="text-xs font-black uppercase text-[#008be3] tracking-wide block">
-                      {plan.company}
-                    </span>
-                    <h3 className="text-base font-extrabold text-slate-900 leading-snug">
-                      {plan.planName}
-                    </h3>
-                  </div>
-
-                  {/* Prima Mensual */}
-                  <div className="p-3.5 rounded-2xl bg-cyan-50/50 border border-cyan-100/80 flex items-baseline justify-between">
-                    <span className="text-xs font-bold text-slate-600">Prima Mensual:</span>
-                    <div className="text-right">
-                      <span className="text-2xl font-black text-[#008be3]">${plan.premium}</span>
-                      <span className="text-[11px] font-bold text-slate-500">/mes</span>
-                    </div>
-                  </div>
-
-                  {/* Tabla de Costos y Copagos */}
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Deducible Anual:</span>
-                      <span className="font-extrabold text-slate-900">{plan.deductible}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Máx. Desembolso (MOOP):</span>
-                      <span className="font-extrabold text-slate-900">{plan.moop}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Médico Primario (PCP):</span>
-                      <span className="font-extrabold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md">
-                        {plan.primaryCare}
-                      </span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Médico Especialista:</span>
-                      <span className="font-extrabold text-slate-900">{plan.specialist}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500 font-medium">Medicinas Genéricas:</span>
-                      <span className="font-extrabold text-slate-900">{plan.genericRx}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-500 font-medium">Salas de Urgencias:</span>
-                      <span className="font-extrabold text-slate-900">{plan.urgencies}</span>
-                    </div>
-                  </div>
-
-                  {/* Explicación Sencilla */}
-                  {plan.clientSummary && (
-                    <div className="p-3 rounded-2xl bg-cyan-50/70 border border-cyan-100/90 text-[11px] text-slate-700 leading-snug">
-                      <div className="flex items-center gap-1 text-[#008be3] font-extrabold mb-1 uppercase tracking-wider text-[10px]">
-                        <span>💡</span> ¿En qué te beneficia este plan?
-                      </div>
-                      <p className="font-medium">{plan.clientSummary}</p>
-                    </div>
-                  )}
-
-                  {/* Beneficio Extra */}
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 flex items-start gap-1.5">
-                    <span className="text-[#00c9b7] font-bold">✓</span>
-                    <span>{plan.extraBenefit}</span>
-                  </div>
-                </div>
-
-                <div className="py-2.5 px-4 bg-slate-50/80 border-t border-slate-100 text-center">
-                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                    Póliza Oficial Regulada
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Resumen Mensual Combinado */}
-          <div className="mt-8 p-5 rounded-2xl bg-gradient-to-r from-teal-50 to-sky-50 border border-[#00c9b7]/30 flex flex-col sm:flex-row items-center justify-between gap-4 print-avoid-break">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white flex items-center justify-center font-black">
-                ✓
-              </div>
-              <div>
-                <h4 className="text-sm font-extrabold text-slate-900">Total Mensual Estimado de la Cobertura</h4>
-                <p className="text-xs text-slate-500">Incluye los planes seleccionados con subsidios y beneficios aplicados</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="text-xs uppercase font-extrabold text-slate-400 block">Inversión Mensual</span>
-              <span className="text-2xl sm:text-3xl font-black text-[#008be3] tabular-nums">
-                ${totalMonthly.toFixed(2)} <span className="text-xs text-slate-500">/mes</span>
-              </span>
-            </div>
-          </div>
-
-          {/* Beneficios de Marca Agente Contigo */}
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs print-avoid-break">
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-lg bg-teal-100 text-[#00c9b7] flex items-center justify-center font-bold shrink-0">
-                ✦
-              </div>
-              <div>
-                <strong className="text-slate-800 block font-bold">Asesoría 100% Gratuita</strong>
-                <p className="text-slate-500 text-[11px]">Te acompañamos en reclamos, cartas y renovaciones sin costo.</p>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-lg bg-sky-100 text-[#008be3] flex items-center justify-center font-bold shrink-0">
-                ✦
-              </div>
-              <div>
-                <strong className="text-slate-800 block font-bold">Red de Médicos Verificada</strong>
-                <p className="text-slate-500 text-[11px]">Validamos tus doctores y clínicas antes de activar la póliza.</p>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold shrink-0">
-                ✦
-              </div>
-              <div>
-                <strong className="text-slate-800 block font-bold">Gestión de Documentos</strong>
-                <p className="text-slate-500 text-[11px]">Subimos tus comprobantes al Marketplace para evitar cancelaciones.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="py-3 px-6 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-2">
-          <span className="font-bold text-[#008be3]">Agente Contigo • Juntos Cuidamos Tu Bienestar</span>
-          <span className="text-[11px] text-slate-400">
-            Cotización sujeta a verificación de ingresos y elegibilidad oficial del Mercado.
-          </span>
-        </div>
+      {/* Panel 4: PROPUESTA PERSONALIZADA IMPRIMIBLE OFICIAL AGENTE CONTIGO */}
+      <div
+        id="printableProposal"
+        className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden print:shadow-none print:border-none"
+      >
+        {renderOfficialAgenteContigoDocument()}
       </div>
 
       {/* Barra de Acciones del Formato de Cotización */}
       {!isPrinting && (
         <>
           <div className="bg-gradient-to-r from-teal-50 via-white to-sky-50 p-4 sm:p-5 rounded-2xl border border-teal-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print quoter-edit-section">
-        <div className="flex items-center gap-3 text-xs">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white flex items-center justify-center font-bold shadow-sm">
-            <Printer className="w-5 h-5" />
-          </div>
-          <div>
-            <strong className="text-slate-900 block text-sm font-black">
-              Formato Oficial de Cotización Listo para Imprimir
-            </strong>
-            <span className="text-slate-600 text-xs">
-              Se generará únicamente el documento para <strong className="text-[#008be3]">{clientName}</strong>, sin capturas, menús ni botones.
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-          <button
-            type="button"
-            onClick={copyShortTextMessage}
-            className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-            title="Copiar mensaje de texto SMS resumido para enviar al cliente"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Copiar Mensaje SMS</span>
-          </button>
-          <button
-            type="button"
-            onClick={copyWhatsAppMessage}
-            className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-            title="Copiar formato para WhatsApp"
-          >
-            <Copy className="w-3.5 h-3.5" />
-            <span>Copiar WhatsApp</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPrintModal(true)}
-            className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <Eye className="w-4 h-4 text-slate-500" />
-            <span>Vista Previa</span>
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintProposal}
-            className="px-5 py-2.5 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            <span>Imprimir / Guardar como PDF</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Historial de Cotizaciones Guardadas */}
-      {savedQuotesList.length > 0 && (
-        <div id="quoterHistoryPanel" className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
-            <div>
-              <h3 className="text-xs font-black uppercase text-slate-800 flex items-center gap-2">
-                <FileText className="w-4 h-4 text-emerald-600" />
-                Historial de Cotizaciones Guardadas ({savedQuotesList.length})
-              </h3>
-              <p className="text-[11px] text-slate-400">
-                Haz clic en una cotización para recargarla o en el icono de papelera para eliminarla.
-              </p>
+            <div className="flex items-center gap-3 text-xs">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white flex items-center justify-center font-bold shadow-sm">
+                <Printer className="w-5 h-5" />
+              </div>
+              <div>
+                <strong className="text-slate-900 block text-sm font-black">
+                  Formato Oficial Agente Contigo Listo para PDF y Correo
+                </strong>
+                <span className="text-slate-600 text-xs">
+                  Documento oficial para <strong className="text-[#008be3]">{clientName}</strong> con Máximo de Bolsillo y
+                  Cuadro Comparativo.
+                </span>
+              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={handleClearAllQuotes}
-              className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer border border-rose-200 self-start sm:self-auto"
-              title="Borrar todas las cotizaciones de prueba"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Borrar Todas las Pruebas</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => openEmailGenerator()}
+                className="px-3.5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-black text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                title="Generar correo profesional (Modo Privado / Sin cambio de estatus o Modo ACA)"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Generar Correo</span>
+              </button>
+              <button
+                type="button"
+                onClick={copyShortTextMessage}
+                className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                title="Copiar mensaje de texto SMS resumido para enviar al cliente"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Copiar SMS</span>
+              </button>
+              <button
+                type="button"
+                onClick={copyWhatsAppMessage}
+                className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                title="Copiar formato para WhatsApp"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copiar WhatsApp</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPrintModal(true)}
+                className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Eye className="w-4 h-4 text-slate-500" />
+                <span>Vista Previa</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintProposal}
+                className="px-5 py-2.5 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs transition shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir / Guardar como PDF</span>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-            {savedQuotesList.map(q => (
-              <div
-                key={q.id}
-                onClick={() => loadSavedQuote(q)}
-                className="p-3.5 rounded-2xl border border-slate-200 hover:border-teal-400 hover:bg-slate-50/70 transition cursor-pointer space-y-2 relative group shadow-sm"
-              >
-                <div className="flex justify-between items-start gap-2">
-                  <span className="font-black text-slate-900 truncate block">
-                    {q.clientName}
-                  </span>
-                  
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="font-mono font-black text-emerald-700 text-xs">
-                      ${q.totalMonthlyPremium.toFixed(2)}/mes
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteQuote(q.id, q.clientName, e)}
-                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-100/70 rounded-lg transition cursor-pointer"
-                      title={`Eliminar cotización de ${q.clientName}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+          {/* Historial de Cotizaciones Guardadas */}
+          {savedQuotesList.length > 0 && (
+            <div
+              id="quoterHistoryPanel"
+              className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-4 no-print quoter-edit-section"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-slate-100 gap-2">
+                <div>
+                  <h3 className="text-xs font-black uppercase text-slate-800 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-emerald-600" />
+                    Historial de Cotizaciones Guardadas ({savedQuotesList.length})
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Haz clic en una cotización para recargarla o en el icono de papelera para eliminarla.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleClearAllQuotes}
+                  className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-3 py-1.5 rounded-xl transition flex items-center gap-1.5 cursor-pointer border border-rose-200 self-start sm:self-auto"
+                  title="Borrar todas las cotizaciones de prueba"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Borrar Todas las Pruebas</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                {savedQuotesList.map(q => (
+                  <div
+                    key={q.id}
+                    onClick={() => loadSavedQuote(q)}
+                    className="p-3.5 rounded-2xl border border-slate-200 hover:border-teal-400 hover:bg-slate-50/70 transition cursor-pointer space-y-2 relative group shadow-sm"
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="font-black text-slate-900 truncate block">{q.clientName}</span>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-black text-emerald-700 text-xs">
+                          ${q.totalMonthlyPremium.toFixed(2)}/mes
+                        </span>
+                        <button
+                          type="button"
+                          onClick={e => handleDeleteQuote(q.id, q.clientName, e)}
+                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-100/70 rounded-lg transition cursor-pointer"
+                          title={`Eliminar cotización de ${q.clientName}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 flex justify-between">
+                      <span>
+                        📍 {q.location} · 👥 {q.members}
+                      </span>
+                      <span className="font-semibold text-slate-600">{q.year}</span>
+                    </div>
+
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-100 pt-1.5">
+                      <span>
+                        {q.plans.length} plan(es) · Asesor: {q.agentName}
+                      </span>
+                      <span className="text-teal-600 font-bold group-hover:underline">Cargar →</span>
+                    </div>
                   </div>
-                </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
-                <div className="text-[11px] text-slate-500 flex justify-between">
-                  <span>📍 {q.location} · 👥 {q.members}</span>
-                  <span className="font-semibold text-slate-600">{q.year}</span>
+      {/* Modal Generador de Correo Integrado */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+          <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <Mail className="w-5 h-5" />
                 </div>
-
-                <div className="text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-100 pt-1.5">
-                  <span>{q.plans.length} plan(es) · Asesor: {q.agentName}</span>
-                  <span className="text-teal-600 font-bold group-hover:underline">
-                    Cargar →
-                  </span>
+                <div>
+                  <h3 className="font-extrabold text-sm text-white">
+                    Generador de Correo al Cliente • Agente Contigo
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Para: <strong className="text-teal-300">{clientName}</strong> • Selecciona el escenario del cliente
+                  </p>
                 </div>
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(false)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Selector de Modo de Correo */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-1">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchEmailMode('privado')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black border text-left transition cursor-pointer flex items-center gap-2 ${
+                    emailMode === 'privado'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <ShieldCheck className={`w-4 h-4 shrink-0 ${emailMode === 'privado' ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <div>
+                    <span className="block">Sin cambio de estatus / Privado</span>
+                    <span className={`text-[10px] font-medium ${emailMode === 'privado' ? 'text-slate-300' : 'text-slate-400'}`}>
+                      Alternativas privadas + regla MedMax
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSwitchEmailMode('aca')}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black border text-left transition cursor-pointer flex items-center gap-2 ${
+                    emailMode === 'aca'
+                      ? 'bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white border-transparent shadow-sm'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${emailMode === 'aca' ? 'text-white' : 'text-slate-400'}`} />
+                  <div>
+                    <span className="block">Aplica a ACA (Obamacare)</span>
+                    <span className={`text-[10px] font-medium ${emailMode === 'aca' ? 'text-cyan-50' : 'text-slate-400'}`}>
+                      Destaca crédito fiscal y copagos Día 1
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Editor del Correo */}
+            <div className="p-5 space-y-3 overflow-y-auto flex-1 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Asunto del Correo</label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-[#00c9b7]"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold uppercase text-slate-500">
+                    Cuerpo del Mensaje (puedes editarlo libremente antes de copiar)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchEmailMode(emailMode)}
+                    className="text-[11px] font-bold text-[#008be3] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Regenerar desde planes</span>
+                  </button>
+                </div>
+                <textarea
+                  rows={14}
+                  value={emailBody}
+                  onChange={e => setEmailBody(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl font-medium text-slate-800 leading-relaxed outline-none focus:ring-2 focus:ring-[#00c9b7]"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <a
+                href={`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-bold text-xs transition flex items-center gap-1.5"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Abrir en App de Correo</span>
+              </a>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(emailSubject);
+                    onShowToast('Asunto Copiado', 'Asunto del correo copiado al portapapeles.', 'info');
+                  }}
+                  className="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Solo Asunto
+                </button>
+                <button
+                  type="button"
+                  onClick={copyEmailToClipboard}
+                  className="px-5 py-2 bg-gradient-to-r from-[#00c9b7] to-[#008be3] hover:opacity-95 text-white rounded-xl font-black text-xs transition flex items-center gap-1.5 shadow cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar Correo Completo</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      )}
-        </>
       )}
 
       {/* Modal API Key Gemini */}
       {showApiKeyModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-xs">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1608,7 +2467,16 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
             <div className="bg-cyan-50/70 p-3 rounded-2xl border border-cyan-100 text-[11px] text-slate-600 space-y-1">
               <p className="font-bold text-[#008be3]">¿Cómo obtenerla gratis en 1 minuto?</p>
               <p>
-                1. Entra a <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-[#008be3] underline font-bold">Google AI Studio (haz clic aquí)</a> con tu cuenta de Google.
+                1. Entra a{' '}
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#008be3] underline font-bold"
+                >
+                  Google AI Studio (haz clic aquí)
+                </a>{' '}
+                con tu cuenta de Google.
               </p>
               <p>2. Haz clic en <strong>"Create API Key"</strong> y pégala aquí arriba.</p>
             </div>
@@ -1638,22 +2506,22 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
         </div>
       )}
 
-      {/* Modal de Vista Previa Oficial (Limpio para Impresión / PDF) */}
+      {/* Modal de Vista Previa Oficial Agente Contigo (Idéntico al PDF) */}
       {showPrintModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto flex items-center justify-center no-print">
           <div className="bg-white rounded-3xl max-w-5xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
             <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold">
                   <Printer className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-white flex items-center gap-2">
-                    Formato Oficial de Cotización Resumida
+                  <h3 className="font-extrabold text-sm text-white">
+                    Vista Previa • Formato Oficial Agente Contigo
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Cliente: <strong className="text-teal-300">{clientName}</strong> • {plans.length} {plans.length === 1 ? 'plan seleccionado' : 'planes seleccionados'}
+                    Cliente: <strong className="text-teal-300">{clientName}</strong> • {plans.length}{' '}
+                    {plans.length === 1 ? 'opción' : 'opciones'} • Incluye Máximo de Bolsillo y Cuadro Comparativo
                   </p>
                 </div>
               </div>
@@ -1680,147 +2548,16 @@ Haz que suene claro, tranquilizador y amigable, explicando en palabras sencillas
               </div>
             </div>
 
-            {/* Banner Informativo */}
             <div className="bg-emerald-50 px-6 py-2.5 border-b border-emerald-200 text-xs text-emerald-900 flex items-center justify-between shrink-0 font-medium">
-              <span>✓ Este documento contiene exclusivamente el resumen de cotizaciones para el cliente, listo para entregar o imprimir en PDF.</span>
+              <span>
+                ✓ Documento listo para entregar o guardar en PDF con encabezado Agente Contigo y cuadro comparativo.
+              </span>
               <span className="font-bold text-emerald-800">Año {quoteYear}</span>
             </div>
 
-            {/* Visualización del formato limpio */}
             <div className="p-4 sm:p-8 bg-slate-100 overflow-y-auto flex-1">
-              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden max-w-4xl mx-auto">
-                {/* Header de la Propuesta */}
-                <div className="pt-8 pb-6 px-6 text-center bg-gradient-to-b from-cyan-50/60 via-white to-white border-b border-slate-100">
-                  <div className="flex items-center justify-center gap-3 mb-2">
-                    <svg className="w-10 h-10" viewBox="0 0 100 100" fill="none">
-                      <circle cx="58" cy="27" r="13" fill="#008be3" />
-                      <circle cx="43" cy="33" r="10" fill="#00c9b7" />
-                      <path d="M42 42C29 44 24 55 24 67C24 81 37 90 53 90C67 90 77 82 77 69C77 56 69 49 61 47C56 52 50 56 42 42Z" fill="#00c9b7" fillOpacity="0.85" />
-                      <path d="M53 45C63 46 72 52 74 65C70 76 60 83 48 83C36 83 31 75 31 69C31 60 41 51 53 45Z" fill="#008be3" />
-                    </svg>
-                    <span className="text-2xl font-black text-[#00c9b7]">
-                      Agente<span className="text-[#008be3]">Contigo</span>
-                    </span>
-                  </div>
-
-                  <div className="inline-block bg-gradient-to-r from-[#00c9b7] to-[#008be3] text-white px-8 py-2 rounded-2xl shadow-sm mb-2">
-                    <h2 className="text-lg sm:text-xl font-black uppercase text-white tracking-wide">
-                      PROPUESTA PERSONALIZADA DE SEGURO MÉDICO
-                    </h2>
-                  </div>
-
-                  <p className="text-xs font-bold text-slate-500">
-                    Cobertura y Beneficios Seleccionados • Período <span className="text-[#008be3]">{quoteYear}</span>
-                  </p>
-
-                  <div className="max-w-2xl mx-auto mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 rounded-2xl p-3 border border-slate-200 text-left text-xs">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Cliente</span>
-                      <strong className="text-slate-900 text-sm block truncate">{clientName}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Ubicación</span>
-                      <strong className="text-slate-700 block truncate">{clientLocation}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Integrantes</span>
-                      <strong className="text-slate-700 block">{clientMembers}</strong>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Asesor</span>
-                      <strong className="text-[#008be3] block truncate">{agentName}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tarjetas de Planes */}
-                <div className="p-6 space-y-5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {plans.map((p) => (
-                      <div
-                        key={p.id}
-                        className={`rounded-2xl border p-4 flex flex-col justify-between ${
-                          p.isRecommended
-                            ? 'border-[#00c9b7] ring-2 ring-[#00c9b7]/30 bg-white'
-                            : 'border-slate-200 bg-white'
-                        }`}
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-[11px] font-black uppercase">
-                            <span className="text-[#008be3]">{p.company}</span>
-                            <span className="text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{p.tier}</span>
-                          </div>
-
-                          <h3 className="font-black text-slate-900 text-sm">{p.planName}</h3>
-
-                          <div className="p-3 bg-cyan-50/60 rounded-xl flex items-baseline justify-between">
-                            <span className="text-xs font-semibold text-slate-600">Prima Mensual:</span>
-                            <span className="text-2xl font-black text-[#008be3]">${p.premium}/mes</span>
-                          </div>
-
-                          <div className="space-y-1.5 text-xs text-slate-600">
-                            <div className="flex justify-between border-b border-slate-100 py-1">
-                              <span>Deducible Anual:</span>
-                              <strong className="text-slate-900">{p.deductible}</strong>
-                            </div>
-                            <div className="flex justify-between border-b border-slate-100 py-1">
-                              <span>Máx. de Bolsillo:</span>
-                              <strong className="text-slate-900">{p.moop}</strong>
-                            </div>
-                            <div className="flex justify-between border-b border-slate-100 py-1">
-                              <span>Médico Primario:</span>
-                              <strong className="text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">{p.primaryCare}</strong>
-                            </div>
-                            <div className="flex justify-between border-b border-slate-100 py-1">
-                              <span>Especialista:</span>
-                              <strong className="text-slate-900">{p.specialist}</strong>
-                            </div>
-                            <div className="flex justify-between border-b border-slate-100 py-1">
-                              <span>Medicamentos Genéricos:</span>
-                              <strong className="text-slate-900">{p.genericRx}</strong>
-                            </div>
-                            <div className="flex justify-between py-1">
-                              <span>Urgencias:</span>
-                              <strong className="text-slate-900">{p.urgencies}</strong>
-                            </div>
-                          </div>
-
-                          {p.clientSummary && (
-                            <div className="p-2.5 rounded-xl bg-cyan-50/80 border border-cyan-100 text-[11px] text-slate-700">
-                              <span className="font-bold text-[#008be3] block mb-0.5">💡 Beneficio para ti:</span>
-                              <p>{p.clientSummary}</p>
-                            </div>
-                          )}
-
-                          {p.extraBenefit && (
-                            <div className="text-[11px] text-slate-500 flex items-start gap-1">
-                              <span className="text-teal-600 font-bold">✓</span>
-                              <span>{p.extraBenefit}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="mt-4 pt-2 border-t border-slate-100 text-center text-[10px] font-bold text-slate-400 uppercase">
-                          {p.isRecommended ? '★ Plan Recomendado' : 'Opción Disponible'}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Resumen Total */}
-                  <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50 to-sky-50 border border-teal-200 flex items-center justify-between">
-                    <div>
-                      <h4 className="font-black text-slate-900 text-sm">Total Mensual Estimado</h4>
-                      <p className="text-xs text-slate-500">Subsidio gubernamental aplicado</p>
-                    </div>
-                    <span className="text-3xl font-black text-[#008be3]">${totalMonthly.toFixed(2)}/mes</span>
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div className="p-4 bg-slate-50 border-t border-slate-100 text-center text-xs text-slate-500">
-                  <span className="font-bold text-[#008be3]">Agente Contigo • Juntos Cuidamos Tu Bienestar</span>
-                </div>
+              <div className="rounded-2xl shadow-sm border border-slate-200 overflow-hidden max-w-4xl mx-auto">
+                {renderOfficialAgenteContigoDocument()}
               </div>
             </div>
           </div>
