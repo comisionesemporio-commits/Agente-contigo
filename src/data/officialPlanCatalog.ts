@@ -1,9 +1,11 @@
 import {
   AcusaLevel,
+  AffordableChoiceLevel,
   AfiLevel,
   AhwPlanLevel,
   BmiPhcsLevel,
   EnrollFamilyTier,
+  GuardPlanLevel,
   HospitalWiseLevel,
   HpgPlanLevel,
   MedAccessAgeBracket,
@@ -11,6 +13,7 @@ import {
   MedMaxAgeBracket,
   MedMaxDeductibleTier,
   MedMaxScope,
+  PresidioLevel,
   QuotePlan
 } from '../types';
 
@@ -312,6 +315,377 @@ export const HPG_SPECS: Record<HpgPlanLevel, HpgSpec> = {
       'Cirugía y Diagnósticos: Cirugía (7 niveles) de $500 a $50,000/día (+ 20% cirujano asistente y 30% anestesiólogo). Centro ambulatorio $4,000/día (máx. 10 días). Lab $50/test, Rayos X $75/test (máx. 10 combinados), MRI/PET/CAT $1,000/test. Quimio oral $2,000/mes (máx. 6 meses), no oral $2,500/día (máx. 60 días).',
       'Consultas, Terapias y Rx: Consultas (10 visitas Año 1 / 12 Año 2+): PCP $150, Especialista $150, Urgencias $200, cirugía menor en consultorio $250. Terapias: $75/visita (máx. 10). Recetas (20 Año 1 / 25 Año 2+): Genérico $20, Marca $60.',
       'Preventivo: Examen físico $150, Labs preventivos $100 (máx. 2), Rayos X $100, Vacuna gripe adultos $25 (1/año), Vacunas niños $25 (máx. 4), Alergias niños $10 (máx. 10), Mamografía $200 (Año 1) / $300 (Año 2+), Pap/PSA $100 (Año 1) / $150 (Año 2+), Colonoscopia $750.'
+    ]
+  }
+};
+
+// ============================================================
+// 2B. GUARD PLANS (4000 / 5000 / 6000) - UNITEDHEALTHCARE / GOLDEN RULE
+// ============================================================
+
+export interface GuardPlanSpec {
+  level: GuardPlanLevel;
+  title: string;
+  shortLabel: string;
+  tierLabel: string;
+  moopLabel: string;
+  pcpLabel: string;
+  specialistLabel: string;
+  rxLabel: string;
+  urgenciesLabel: string;
+  extraBenefitLabel: string;
+  bullets: string[];
+}
+
+export const GUARD_AVAILABLE_STATES = [
+  'AK', 'AL', 'AR', 'AZ', 'DE', 'FL', 'GA', 'HI', 'IA', 'IL', 'IN',
+  'KY', 'LA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'NC', 'NE', 'NV',
+  'OH', 'OK', 'RI', 'SC', 'TN', 'TX', 'UT', 'VA', 'WI', 'WV', 'WY'
+];
+
+export const GUARD_SPECS: Record<GuardPlanLevel, GuardPlanSpec> = {
+  guard4000: {
+    level: 'guard4000',
+    title: 'Guard 4000',
+    shortLabel: 'Guard 4000',
+    tierLabel: 'Guard 4000 • Indemnización Fija en Efectivo ($0 Deducible)',
+    moopLabel: 'Pagos fijos en efectivo por persona/año ($0 deducible; cirugía hasta $12,500/día)',
+    pcpLabel: '$80/visita (4 Año 1 / 6 Año 2+)',
+    specialistLabel: '$100/visita (SP/UC)',
+    rxLabel: 'No cubierto (Optum Perks 30%-80%)',
+    urgenciesLabel: '$300/día ER (máx. 3 días) • $100/visita UC',
+    extraBenefitLabel:
+      'Red UHC Choice Plus (~58% ahorro promedio) + Telemedicina $0 (HealthiestYou) + Tarjeta Optum Perks (30%-80%).',
+    bullets: [
+      'Condiciones Generales y Red UHC Choice Plus: Plan de indemnización fija en efectivo sin deducible, sin coseguro y sin copagos (Golden Rule / UnitedHealthcare, Form HPG3-CSTM-GRI). Red UHC Choice Plus (+1.8M proveedores, 7,000+ hospitales, ~58% ahorro promedio) o cualquier médico. Edades 18-64 (preexistentes 12 meses; renovable hasta los 65). Incluye Telemedicina ilimitada $0 (HealthiestYou by Teladoc Health) y tarjeta Optum Perks.',
+      'Hospitalización, Emergencias y Ambulancia: 1.er día de admisión hospitalaria (incluye observación 24h+) $4,000/día (máx. 1 día/año). Confinamiento hospitalario $100/día Año 1 | $200/día Año 2+ solo por lesión (máx. 31 días/año). Visita médica en hospital $100/día (máx. 1/día). Sala de Emergencias (ER) $300/día (máx. 3 días/año). Ambulancia (máx. 1 viaje/año): terrestre/acuática $500 | aérea $3,000.',
+      'Cirugía y Centro Ambulatorio: Procedimiento quirúrgico (7 niveles) de $125 a $12,500/día (máx. 2 días/año; +20% cirujano asistente y +30% anestesiólogo, máx. 2 días). Centro ambulatorio $1,000/día (máx. 2 días/año). Exámenes ambulatorios (Rayos X, Diagnóstico Tier 1 y MRI/PET/CAT): No cubiertos en Guard 4000.',
+      'Consultas, Terapias y Farmacia: Consultas médicas (4 Año 1 / 6 Año 2+): Médico $80/visita, Especialista/Urgencias $100/visita, cirugía menor en consultorio $200/visita. Terapias (quiropráctica, física, ocupacional, habla): $25/visita (máx. 10 visitas/año). Recetas médicas (Rx): No cubiertas en Guard 4000 (solo tarjeta descuento Optum Perks 30%-80%).'
+    ]
+  },
+  guard5000: {
+    level: 'guard5000',
+    title: 'Guard 5000',
+    shortLabel: 'Guard 5000',
+    tierLabel: 'Guard 5000 • Indemnización Fija en Efectivo ($0 Deducible)',
+    moopLabel: 'Pagos fijos en efectivo por persona/año ($0 deducible; cirugía hasta $12,500/día)',
+    pcpLabel: '$100/visita (4 Año 1 / 6 Año 2+)',
+    specialistLabel: '$120 SP / $150 UC',
+    rxLabel: '$10 Genérico / $40 Marca (10 Año 1 / 15 Año 2+)',
+    urgenciesLabel: '$500/día ER (máx. 3 días) • $150/visita UC',
+    extraBenefitLabel:
+      'Red UHC Choice Plus (~58% ahorro promedio) + Telemedicina $0 (HealthiestYou) + Recetas Rx ($10/$40) + Optum Perks.',
+    bullets: [
+      'Condiciones Generales y Red UHC Choice Plus: Plan de indemnización fija en efectivo sin deducible, sin coseguro y sin copagos (Golden Rule / UnitedHealthcare, Form HPG3-CSTM-GRI). Red UHC Choice Plus (+1.8M proveedores, 7,000+ hospitales, ~58% ahorro promedio) o cualquier médico. Edades 18-64 (preexistentes 12 meses; renovable hasta los 65). Incluye Telemedicina ilimitada $0 (HealthiestYou by Teladoc Health) y descuentos Optum Perks.',
+      'Hospitalización, Emergencias y Ambulancia: 1.er día de admisión hospitalaria (incluye observación 24h+) $5,000/día (máx. 1 día/año). Confinamiento hospitalario $100/día Año 1 | $200/día Año 2+ solo por lesión (máx. 31 días/año). Visita médica en hospital $100/día (máx. 1/día). Sala de Emergencias (ER) $500/día (máx. 3 días/año). Ambulancia (máx. 1 viaje/año): terrestre/acuática $600 | aérea $3,000.',
+      'Cirugía y Diagnósticos Ambulatorios: Procedimiento quirúrgico (7 niveles) de $125 a $12,500/día (máx. 2 días/año; +20% cirujano asistente y +30% anestesiólogo, máx. 2 días). Centro ambulatorio $1,500/día (máx. 2 días/año). Exámenes ambulatorios (máx. 4 combinados/año): Rayos X $50/test, Tier 1 (Ultrasonido/EKG/EEG/Angiograma) $250/test, Tier 2 (MRI/PET/CAT) $500/test.',
+      'Consultas, Terapias y Farmacia (Rx): Consultas médicas (4 Año 1 / 6 Año 2+): Médico $100/visita, Especialista $120/visita, Urgencias (UC) $150/visita, cirugía menor en consultorio $225/visita. Terapias (quiropráctica, física, ocupacional, habla): $35/visita (máx. 10 visitas/año). Recetas Rx (10 surtidos Año 1 / 15 Año 2+): Genérico $10 | Marca $40 (+ Optum Perks).'
+    ]
+  },
+  guard6000: {
+    level: 'guard6000',
+    title: 'Guard 6000',
+    shortLabel: 'Guard 6000',
+    tierLabel: 'Guard 6000 • Indemnización Fija Superior en Efectivo ($0 Deducible)',
+    moopLabel: 'Pagos fijos en efectivo por persona/año ($0 deducible; cirugía hasta $25,000/día)',
+    pcpLabel: '$120/visita (4 Año 1 / 6 Año 2+)',
+    specialistLabel: '$140 SP / $200 UC',
+    rxLabel: '$10 Genérico / $40 Marca (10 Año 1 / 15 Año 2+)',
+    urgenciesLabel: '$600/día ER (máx. 3 días) • $200/visita UC',
+    extraBenefitLabel:
+      'Red UHC Choice Plus (~58% ahorro promedio) + Telemedicina $0 (HealthiestYou) + Recetas Rx ($10/$40) + Optum Perks.',
+    bullets: [
+      'Condiciones Generales y Red UHC Choice Plus: Plan de indemnización fija en efectivo sin deducible, sin coseguro y sin copagos (Golden Rule / UnitedHealthcare, Form HPG3-CSTM-GRI). Red UHC Choice Plus (+1.8M proveedores, 7,000+ hospitales, ~58% ahorro promedio) o cualquier médico. Edades 18-64 (preexistentes 12 meses; renovable hasta los 65). Incluye Telemedicina ilimitada $0 (HealthiestYou by Teladoc Health) y descuentos Optum Perks.',
+      'Hospitalización, Emergencias y Ambulancia: 1.er día de admisión hospitalaria (incluye observación 24h+) $6,000/día (máx. 1 día/año). Confinamiento hospitalario $100/día Año 1 | $200/día Año 2+ solo por lesión (máx. 31 días/año). Visita médica en hospital $100/día (máx. 1/día). Sala de Emergencias (ER) $600/día (máx. 3 días/año). Ambulancia (máx. 1 viaje/año): terrestre/acuática $600 | aérea $3,000.',
+      'Cirugía y Diagnósticos Ambulatorios: Procedimiento quirúrgico (7 niveles) de $250 a $25,000/día (máx. 2 días/año; +20% cirujano asistente y +30% anestesiólogo, máx. 2 días). Centro ambulatorio $2,000/día (máx. 2 días/año). Exámenes ambulatorios (máx. 4 combinados/año): Rayos X $100/test, Tier 1 (Ultrasonido/EKG/EEG/Angiograma) $500/test, Tier 2 (MRI/PET/CAT) $500/test.',
+      'Consultas, Terapias y Farmacia (Rx): Consultas médicas (4 Año 1 / 6 Año 2+): Médico $120/visita, Especialista $140/visita, Urgencias (UC) $200/visita, cirugía menor en consultorio $250/visita. Terapias (quiropráctica, física, ocupacional, habla): $50/visita (máx. 10 visitas/año). Recetas Rx (10 surtidos Año 1 / 15 Año 2+): Genérico $10 | Marca $40 (+ Optum Perks).'
+    ]
+  }
+};
+
+// ============================================================
+// 2C. MANHATTANLIFE • AFFORDABLE CHOICE MEJORADOS (CLASSIC -> ELITE PLUS)
+// ============================================================
+
+export const AFFORDABLE_CHOICE_AGES = [20, 25, 30, 35, 40, 45, 50, 55, 60, 64] as const;
+export type AffordableChoiceAge = (typeof AFFORDABLE_CHOICE_AGES)[number];
+export type AffordableChoiceGroupKey = 'empleado' | 'pareja' | 'hijos' | 'familiar' | 'solo_ninos';
+
+export interface AffordableChoiceSpec {
+  level: AffordableChoiceLevel;
+  title: string;
+  shortLabel: string;
+  tierLabel: string;
+  moopLabel: string;
+  pcpLabel: string;
+  specialistLabel: string;
+  rxLabel: string;
+  urgenciesLabel: string;
+  extraBenefitLabel: string;
+  ratesByAge: Record<AffordableChoiceAge, Record<AffordableChoiceGroupKey, number>>;
+  bullets: string[];
+}
+
+export const AFFORDABLE_CHOICE_SPECS: Record<AffordableChoiceLevel, AffordableChoiceSpec> = {
+  classic: {
+    level: 'classic',
+    title: 'Affordable Choice Classic',
+    shortLabel: 'Classic',
+    tierLabel: 'Indemnización Fija • Hospital $2,000/día ($0 Deducible)',
+    moopLabel: 'Máx. Anual Hosp. $1,000,000 • Máx. Vitalicio $5,000,000 ($0 deducible)',
+    pcpLabel: '$75/día consultorio (máx. 6 días/año; transf. hasta 5)',
+    specialistLabel: '$75/día consultorio • Cirugía 1x Medicare (máx. $50k/año)',
+    rxLabel: '$25/día Rx (máx. $750/año) + EasyCare2go',
+    urgenciesLabel: '$250/día ER (1/año) • $250/día UC (2/año)',
+    extraBenefitLabel:
+      'Sin períodos de espera ni restricción de red (ahorros First Health +1.5M centros), Telemedicina EasyCare2go, Green Imaging, DirectLabs y CareGuide.',
+    ratesByAge: {
+      20: { empleado: 70.09, pareja: 128.52, hijos: 116.9, familiar: 183.93, solo_ninos: 74.42 },
+      25: { empleado: 79.33, pareja: 144.76, hijos: 131.38, familiar: 207.19, solo_ninos: 74.42 },
+      30: { empleado: 89.32, pareja: 166.67, hijos: 147.0, familiar: 232.21, solo_ninos: 74.42 },
+      35: { empleado: 99.14, pareja: 184.93, hijos: 162.32, familiar: 256.72, solo_ninos: 74.42 },
+      40: { empleado: 108.3, pareja: 201.76, hijos: 176.47, familiar: 279.22, solo_ninos: 74.42 },
+      45: { empleado: 119.29, pareja: 221.84, hijos: 193.37, familiar: 306.02, solo_ninos: 74.42 },
+      50: { empleado: 137.63, pareja: 254.91, hijos: 221.31, familiar: 349.99, solo_ninos: 74.42 },
+      55: { empleado: 155.97, pareja: 287.99, hijos: 249.24, familiar: 393.97, solo_ninos: 74.42 },
+      60: { empleado: 174.94, pareja: 322.15, hijos: 278.11, familiar: 439.37, solo_ninos: 74.42 },
+      64: { empleado: 192.06, pareja: 352.8, hijos: 304.03, familiar: 480.01, solo_ninos: 74.42 }
+    },
+    bullets: [
+      'Hospitalización y Emergencias (Pago Fijo desde Día 1): Admisión hospitalaria 1.er día $1,000 + Internación $2,000/día (por lesión sube +25%/año: Año 2 $2,500, Año 3 $3,000, Año 4 $3,500, Año 5 $4,000/día; límite $1,000,000/año y $5,000,000 vitalicio). Observación hospitalaria $1,000/día (24-47h) y $1,500/día (48h+). Sala de Emergencias (ER) $250/día (1/año) | Urgencias (UC) $250/día (2/año). Ambulancia: terrestre $150 / aérea $1,500 (máx. 2/año).',
+      'Cirugías y Cáncer: Cirugías (hosp. y amb.) pagan 1 vez el arancel Medicare (máx. $50,000/año) + Cirugía ambulatoria $1,000 + 20% cirujano asistente + 25% anestesiólogo. Beneficio por cáncer (radio/quimio/inmuno): $1,000/día (máx. 40 días/año).',
+      'Consultas, Ambulatorios y Rx (máx. ambulatorio $4,000/año): Consultorio médico $75/día (máx. 6 días/año; transferencia de hasta 5 visitas). Preventivo: Colonoscopía $500, Pap $250, PSA $250. Lab patología $200 / otros $50; Terapia (física/ocupacional/habla) $50/día; Radiología MRI/PET/CT/Mamografía/otras $300/$300/$250/$200. Medicamentos recetados (Rx) $25/día (máx. $750/año).',
+      'Libertad de Red y Extras ManhattanLife: Sin períodos de espera ni restricción de red (descuentos First Health Network +1.5M centros), Telemedicina y Rx con descuento EasyCare2go, Green Imaging, DirectLabs y CareGuide (anexo opcional enfermedades críticas $250k/$500k disponible).'
+    ]
+  },
+  classic_plus: {
+    level: 'classic_plus',
+    title: 'Affordable Choice Classic Plus',
+    shortLabel: 'Classic Plus',
+    tierLabel: 'Indemnización Fija • Hospital $3,000/día ($0 Deducible)',
+    moopLabel: 'Máx. Anual Hosp. $1,000,000 • Máx. Vitalicio $5,000,000 ($0 deducible)',
+    pcpLabel: '$125/día consultorio (máx. 8 días/año; transf. hasta 5)',
+    specialistLabel: '$125/día consultorio • Cirugía 2x Medicare (máx. $50k/año)',
+    rxLabel: '$50/día Rx (máx. $750/año) + EasyCare2go',
+    urgenciesLabel: '$250/día ER (1/año) • $250/día UC (2/año)',
+    extraBenefitLabel:
+      'Sin períodos de espera ni restricción de red (ahorros First Health +1.5M centros), Telemedicina EasyCare2go, Green Imaging, DirectLabs y CareGuide.',
+    ratesByAge: {
+      20: { empleado: 98.09, pareja: 184.48, hijos: 169.21, familiar: 267.53, solo_ninos: 109.2 },
+      25: { empleado: 110.34, pareja: 206.76, hijos: 188.91, familiar: 299.34, solo_ninos: 109.2 },
+      30: { empleado: 123.57, pareja: 235.14, hijos: 210.12, familiar: 333.51, solo_ninos: 109.2 },
+      35: { empleado: 136.56, pareja: 259.73, hijos: 230.91, familiar: 366.96, solo_ninos: 109.2 },
+      40: { empleado: 148.59, pareja: 282.31, hijos: 250.02, familiar: 397.59, solo_ninos: 109.2 },
+      45: { empleado: 162.99, pareja: 309.2, hijos: 272.81, familiar: 434.02, solo_ninos: 109.2 },
+      50: { empleado: 186.85, pareja: 353.32, hijos: 310.29, familiar: 493.6, solo_ninos: 109.2 },
+      55: { empleado: 210.71, pareja: 397.44, hijos: 347.77, familiar: 553.19, solo_ninos: 109.2 },
+      60: { empleado: 235.38, pareja: 442.99, hijos: 386.46, familiar: 614.68, solo_ninos: 109.2 },
+      64: { empleado: 257.57, pareja: 483.76, hijos: 421.15, familiar: 669.65, solo_ninos: 109.2 }
+    },
+    bullets: [
+      'Hospitalización y Emergencias (Pago Fijo desde Día 1): Admisión hospitalaria 1.er día $1,000 + Internación $3,000/día (por lesión sube +25%/año: Año 2 $3,750, Año 3 $4,500, Año 4 $5,250, Año 5 $6,000/día; límite $1,000,000/año y $5,000,000 vitalicio). Observación hospitalaria $1,500/día (24-47h) y $2,250/día (48h+). ER $250/día (1/año) | Urgencias (UC) $250/día (2/año). Ambulancia: terrestre $150 / aérea $1,500 (máx. 2/año).',
+      'Cirugías y Cáncer: Cirugías (hosp. y amb.) pagan 2 veces el arancel Medicare (máx. $50,000/año) + Cirugía ambulatoria $2,000 + 20% cirujano asistente + 25% anestesiólogo. Beneficio por cáncer (radio/quimio/inmuno): $1,000/día (máx. 40 días/año).',
+      'Consultas, Ambulatorios y Rx (máx. ambulatorio $4,000/año): Consultorio médico $125/día (máx. 8 días/año; transferencia de hasta 5 visitas). Preventivo: Colonoscopía $500, Pap $250, PSA $250. Lab patología $200 / otros $50; Terapia (física/ocupacional/habla) $50/día; Radiología MRI/PET/CT/Mamografía/otras $500/$500/$250/$200. Medicamentos recetados (Rx) $50/día (máx. $750/año).',
+      'Libertad de Red y Extras ManhattanLife: Sin períodos de espera ni restricción de red (descuentos First Health Network +1.5M centros), Telemedicina y Rx con descuento EasyCare2go, Green Imaging, DirectLabs y CareGuide (anexo opcional enfermedades críticas $250k/$500k disponible).'
+    ]
+  },
+  elite: {
+    level: 'elite',
+    title: 'Affordable Choice Elite',
+    shortLabel: 'Elite',
+    tierLabel: 'Indemnización Fija • Hospital $4,000/día ($0 Deducible)',
+    moopLabel: 'Máx. Anual Hosp. $1,000,000 • Máx. Vitalicio $5,000,000 ($0 deducible)',
+    pcpLabel: '$175/día consultorio (máx. 10 días/año; transf. hasta 5)',
+    specialistLabel: '$175/día consultorio • Cirugía 2.5x Medicare (máx. $50k/año)',
+    rxLabel: '$50/día Rx (máx. $750/año) + EasyCare2go',
+    urgenciesLabel: '$300/día ER (2/año) • $300/día UC (4/año)',
+    extraBenefitLabel:
+      'Sin períodos de espera ni restricción de red (ahorros First Health +1.5M centros), Telemedicina EasyCare2go, Green Imaging, DirectLabs y CareGuide.',
+    ratesByAge: {
+      20: { empleado: 128.73, pareja: 240.91, hijos: 225.09, familiar: 355.07, solo_ninos: 147.48 },
+      25: { empleado: 145.22, pareja: 269.32, hijos: 251.4, familiar: 396.88, solo_ninos: 147.48 },
+      30: { empleado: 163.09, pareja: 309.21, hijos: 279.79, familiar: 441.85, solo_ninos: 147.48 },
+      35: { empleado: 180.67, pareja: 341.6, hijos: 307.65, familiar: 485.93, solo_ninos: 147.48 },
+      40: { empleado: 197.09, pareja: 371.49, hijos: 333.42, familiar: 526.44, solo_ninos: 147.48 },
+      45: { empleado: 216.85, pareja: 407.19, hijos: 364.24, familiar: 574.71, solo_ninos: 147.48 },
+      50: { empleado: 249.92, pareja: 466.12, hijos: 415.26, familiar: 654.04, solo_ninos: 147.48 },
+      55: { empleado: 282.99, pareja: 525.05, hijos: 466.28, familiar: 733.36, solo_ninos: 147.48 },
+      60: { empleado: 317.22, pareja: 585.93, hijos: 519.01, familiar: 815.26, solo_ninos: 147.48 },
+      64: { empleado: 348.14, pareja: 640.59, hijos: 566.41, familiar: 888.63, solo_ninos: 147.48 }
+    },
+    bullets: [
+      'Hospitalización y Emergencias (Pago Fijo desde Día 1): Admisión hospitalaria 1.er día $2,000 + Internación $4,000/día (por lesión sube +25%/año: Año 2 $5,000, Año 3 $6,000, Año 4 $7,000, Año 5 $8,000/día; límite $1,000,000/año y $5,000,000 vitalicio). Observación hospitalaria $2,000/día (24-47h) y $3,000/día (48h+). ER $300/día (2/año) | Urgencias (UC) $300/día (4/año). Ambulancia: terrestre $150 / aérea $1,500 (máx. 2/año).',
+      'Cirugías y Cáncer: Cirugías (hosp. y amb.) pagan 2.5 veces el arancel Medicare (máx. $50,000/año) + Cirugía ambulatoria $2,500 + 20% cirujano asistente + 25% anestesiólogo. Beneficio por cáncer (radio/quimio/inmuno): $2,000/día (máx. 40 días/año).',
+      'Consultas, Ambulatorios y Rx (máx. ambulatorio $6,000/año): Consultorio médico $175/día (máx. 10 días/año; transferencia de hasta 5 visitas). Preventivo: Colonoscopía $600, Pap $300, PSA $300. Lab patología $300 / otros $50; Terapia (física/ocupacional/habla) $75/día; Radiología MRI/PET/CT/Mamografía/otras $600/$600/$300/$250. Medicamentos recetados (Rx) $50/día (máx. $750/año).',
+      'Libertad de Red y Extras ManhattanLife: Sin períodos de espera ni restricción de red (descuentos First Health Network +1.5M centros), Telemedicina y Rx con descuento EasyCare2go, Green Imaging, DirectLabs y CareGuide (anexo opcional enfermedades críticas $250k/$500k disponible).'
+    ]
+  },
+  elite_plus: {
+    level: 'elite_plus',
+    title: 'Affordable Choice Elite Plus',
+    shortLabel: 'Elite Plus',
+    tierLabel: 'Indemnización Fija Superior • Hospital $6,000/día ($0 Deducible)',
+    moopLabel: 'Máx. Anual Hosp. $1,000,000 • Máx. Vitalicio $5,000,000 ($0 deducible)',
+    pcpLabel: '$200/día consultorio (máx. 10 días/año; transf. hasta 5)',
+    specialistLabel: '$200/día consultorio • Cirugía 3x Medicare (máx. $50k/año)',
+    rxLabel: '$75/día Rx (máx. $750/año) + EasyCare2go',
+    urgenciesLabel: '$300/día ER (2/año) • $300/día UC (4/año)',
+    extraBenefitLabel:
+      'Sin períodos de espera ni restricción de red (ahorros First Health +1.5M centros), Telemedicina EasyCare2go, Green Imaging, DirectLabs y CareGuide.',
+    ratesByAge: {
+      20: { empleado: 160.48, pareja: 304.39, hijos: 283.81, familiar: 449.21, solo_ninos: 194.49 },
+      25: { empleado: 181.84, pareja: 342.54, hijos: 318.9, familiar: 505.19, solo_ninos: 194.49 },
+      30: { empleado: 204.92, pareja: 392.85, hijos: 356.67, familiar: 565.33, solo_ninos: 194.49 },
+      35: { empleado: 227.59, pareja: 435.43, hijos: 393.71, familiar: 624.24, solo_ninos: 194.49 },
+      40: { empleado: 248.65, pareja: 474.58, hijos: 427.82, familiar: 678.23, solo_ninos: 194.49 },
+      45: { empleado: 273.89, pareja: 521.25, hijos: 468.52, familiar: 742.46, solo_ninos: 194.49 },
+      50: { empleado: 315.85, pareja: 597.96, hijos: 535.56, familiar: 847.67, solo_ninos: 194.49 },
+      55: { empleado: 357.81, pareja: 674.67, hijos: 602.6, familiar: 952.88, solo_ninos: 194.49 },
+      60: { empleado: 401.2, pareja: 753.89, hijos: 671.84, familiar: 1061.46, solo_ninos: 194.49 },
+      64: { empleado: 440.29, pareja: 824.86, hijos: 733.94, familiar: 1158.58, solo_ninos: 194.49 }
+    },
+    bullets: [
+      'Hospitalización y Emergencias (Pago Fijo desde Día 1): Admisión hospitalaria 1.er día $3,000 + Internación $6,000/día (por lesión sube +25%/año: Año 2 $7,500, Año 3 $9,000, Año 4 $10,500, Año 5 $12,000/día; límite $1,000,000/año y $5,000,000 vitalicio). Observación hospitalaria $3,000/día (24-47h) y $4,500/día (48h+). ER $300/día (2/año) | Urgencias (UC) $300/día (4/año). Ambulancia: terrestre $150 / aérea $1,500 (máx. 2/año).',
+      'Cirugías y Cáncer: Cirugías (hosp. y amb.) pagan 3 veces el arancel Medicare (máx. $50,000/año) + Cirugía ambulatoria $3,000 + 20% cirujano asistente + 25% anestesiólogo. Beneficio por cáncer (radio/quimio/inmuno): $2,000/día (máx. 40 días/año).',
+      'Consultas, Ambulatorios y Rx (máx. ambulatorio $8,000/año): Consultorio médico $200/día (máx. 10 días/año; transferencia de hasta 5 visitas). Preventivo: Colonoscopía $600, Pap $300, PSA $300. Lab patología $300 / otros $50; Terapia (física/ocupacional/habla) $75/día; Radiología MRI/PET/CT/Mamografía/otras $700/$700/$300/$250. Medicamentos recetados (Rx) $75/día (máx. $750/año).',
+      'Libertad de Red y Extras ManhattanLife: Sin períodos de espera ni restricción de red (descuentos First Health Network +1.5M centros), Telemedicina y Rx con descuento EasyCare2go, Green Imaging, DirectLabs y CareGuide (anexo opcional enfermedades críticas $250k/$500k disponible).'
+    ]
+  }
+};
+
+export const detectClosestAffordableChoiceAge = (agesText: string): AffordableChoiceAge => {
+  const ages = extractAgesArray(agesText);
+  const adultAges = ages.filter(a => a >= 18);
+  const ref = adultAges.length > 0 ? Math.max(...adultAges) : ages[0] || 30;
+  let closest: AffordableChoiceAge = 30;
+  let bestDiff = Infinity;
+  for (const ageOpt of AFFORDABLE_CHOICE_AGES) {
+    const diff = Math.abs(ageOpt - ref);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      closest = ageOpt;
+    }
+  }
+  return closest;
+};
+
+export const detectAffordableChoiceGroupKey = (
+  membersText: string,
+  agesText: string
+): AffordableChoiceGroupKey => {
+  const m = String(membersText || '').toLowerCase();
+  if (m.includes('solo niño') || m.includes('solo nino') || m.includes('hijos solamente')) {
+    return 'solo_ninos';
+  }
+  const famTier = detectEnrollFamilyTier(membersText, agesText);
+  return famTier;
+};
+
+// ============================================================
+// 2D. PRESIDIO HEALTHCARE • FORTRESS PLAN (SOLO EN TEXAS - TX)
+// ============================================================
+
+export const PRESIDIO_AVAILABLE_STATES = ['TX'];
+
+export interface PresidioSpec {
+  level: PresidioLevel;
+  title: string;
+  shortLabel: string;
+  tierLabel: string;
+  deductibleLabel: string;
+  moopLabel: string;
+  pcpLabel: string;
+  specialistLabel: string;
+  rxLabel: string;
+  urgenciesLabel: string;
+  sampleRateHint: string;
+  extraBenefitLabel: string;
+  bullets: string[];
+}
+
+export const PRESIDIO_SPECS: Record<PresidioLevel, PresidioSpec> = {
+  elite2500: {
+    level: 'elite2500',
+    title: 'Presidio Fortress • Elite 2.5K (Solo TX)',
+    shortLabel: 'Elite 2.5K',
+    tierLabel: 'Elite 2.5K • Deducible $0 • 50% Coaseguro (Solo Texas)',
+    deductibleLabel: '$0 Ind. / $0 Fam. ($5,000 si embarazo activo al contratar)',
+    moopLabel: '$2,500 Ind. / $5,000 Fam. (MOOP separado Enfermedad y Accidente • 100% ilimitado post-MOOP)',
+    pcpLabel: '50% Coaseguro en red First Health • Telemedicina 24/7 $0',
+    specialistLabel: '50% Coaseguro sin referidos (hasta llegar a MOOP $2,500/$5,000)',
+    rxLabel: 'Rx Valet 50% Día 1 (integrado al MOOP)',
+    urgenciesLabel: '50% Coaseguro en red hasta alcanzar MOOP ($2,500 Ind. / $5,000 Fam.)',
+    sampleRateHint: 'Ej. TX: $216/mes (30a), $446/mes (45a), $853/mes (Fam. 4)',
+    extraBenefitLabel:
+      'Disponible SOLO en Texas (TDI). $0 deducible + 50% coaseguro hasta MOOP + 100% ilimitado post-MOOP + 50% Rollover anual + Telemedicina $0 + Rx Valet.',
+    bullets: [
+      'Mecánica Financiera (Solo Texas • TDI): Deducible $0 (cubre desde el primer dólar), 50% coaseguro en red hasta alcanzar el MOOP de $2,500 Ind. / $5,000 Fam. (máximos separados para Enfermedad y Accidente; tope aprox. ~$5,000 facturas) y 100% ilimitado sin topes de días ni montos tras alcanzar el MOOP.',
+      '50% Rollover Anual y Red First Health PPO: El 50% del MOOP no utilizado se transfiere como crédito para reducir el MOOP del año siguiente (hasta a la mitad si no se usa). Red First Health PPO (+993,000 médicos, +5,700 hospitales, sin referidos), Telemedicina 24/7 a $0 y Farmacia Rx Valet integrada al MOOP (50% Día 1 en genéricos, marca y especialidad).',
+      'Arquitectura Bundle y Wellness Opcional: Combina póliza formal de Enfermedad + Accidente (regulado por TDI de Texas; no es Cost-Sharing ni ACA). Opción de agregar Rider de Wellness (+$19 a $75/mes aprox.: chequeo anual $200, mamografía $350, colonoscopía $1,100, pediatría hasta 7x $200, vacunas hasta 10x $70, lab hasta 3x $50).',
+      'Reglas de Suscripción y Disponibilidad TX: Disponible exclusivamente en Texas (TX). Preexistencias no excluidas: espera de 12 meses en hospitalizaciones/eventos mayores (Rx al 50% desde el Día 1; embarazo activo al contratar tiene deducible de parto de $5,000 en 1.er año). No elegible con cáncer, infarto, diabetes 1/2, VIH, lupus, hepatitis B/C, insuficiencia renal/cardíaca o fumador >4 veces/mes.'
+    ]
+  },
+  secure5000: {
+    level: 'secure5000',
+    title: 'Presidio Fortress • Secure 5K (Solo TX)',
+    shortLabel: 'Secure 5K',
+    tierLabel: 'Secure 5K • Deducible $0 • 50% Coaseguro (Solo Texas)',
+    deductibleLabel: '$0 Ind. / $0 Fam. ($5,000 si embarazo activo al contratar)',
+    moopLabel: '$5,000 Ind. / $10,000 Fam. (MOOP separado Enfermedad y Accidente • 100% ilimitado post-MOOP)',
+    pcpLabel: '50% Coaseguro en red First Health • Telemedicina 24/7 $0',
+    specialistLabel: '50% Coaseguro sin referidos (hasta llegar a MOOP $5,000/$10,000)',
+    rxLabel: 'Rx Valet 50% Día 1 (integrado al MOOP)',
+    urgenciesLabel: '50% Coaseguro en red hasta alcanzar MOOP ($5,000 Ind. / $10,000 Fam.)',
+    sampleRateHint: 'Ej. TX: $189/mes (30a), $390/mes (45a), $746/mes (Fam. 4)',
+    extraBenefitLabel:
+      'Disponible SOLO en Texas (TDI). $0 deducible + 50% coaseguro hasta MOOP + 100% ilimitado post-MOOP + 50% Rollover anual + Telemedicina $0 + Rx Valet.',
+    bullets: [
+      'Mecánica Financiera (Solo Texas • TDI): Deducible $0 (cubre desde el primer dólar), 50% coaseguro en red hasta alcanzar el MOOP de $5,000 Ind. / $10,000 Fam. (máximos separados para Enfermedad y Accidente; tope aprox. ~$10,000 facturas) y 100% ilimitado sin topes de días ni montos tras alcanzar el MOOP.',
+      '50% Rollover Anual y Red First Health PPO: El 50% del MOOP no utilizado se transfiere como crédito para reducir el MOOP del año siguiente (hasta a la mitad si no se usa). Red First Health PPO (+993,000 médicos, +5,700 hospitales, sin referidos), Telemedicina 24/7 a $0 y Farmacia Rx Valet integrada al MOOP (50% Día 1 en genéricos, marca y especialidad).',
+      'Arquitectura Bundle y Wellness Opcional: Combina póliza formal de Enfermedad + Accidente (regulado por TDI de Texas; no es Cost-Sharing ni ACA). Opción de agregar Rider de Wellness (+$19 a $75/mes aprox.: chequeo anual $200, mamografía $350, colonoscopía $1,100, pediatría hasta 7x $200, vacunas hasta 10x $70, lab hasta 3x $50).',
+      'Reglas de Suscripción y Disponibilidad TX: Disponible exclusivamente en Texas (TX). Preexistencias no excluidas: espera de 12 meses en hospitalizaciones/eventos mayores (Rx al 50% desde el Día 1; embarazo activo al contratar tiene deducible de parto de $5,000 en 1.er año). No elegible con cáncer, infarto, diabetes 1/2, VIH, lupus, hepatitis B/C, insuficiencia renal/cardíaca o fumador >4 veces/mes.'
+    ]
+  },
+  value7500: {
+    level: 'value7500',
+    title: 'Presidio Fortress • Value 7.5K (Solo TX)',
+    shortLabel: 'Value 7.5K',
+    tierLabel: 'Value 7.5K • Deducible $0 • 50% Coaseguro (Solo Texas)',
+    deductibleLabel: '$0 Ind. / $0 Fam. ($5,000 si embarazo activo al contratar)',
+    moopLabel: '$7,500 Ind. / $15,000 Fam. (MOOP separado Enfermedad y Accidente • 100% ilimitado post-MOOP)',
+    pcpLabel: '50% Coaseguro en red First Health • Telemedicina 24/7 $0',
+    specialistLabel: '50% Coaseguro sin referidos (hasta llegar a MOOP $7,500/$15,000)',
+    rxLabel: 'Rx Valet 50% Día 1 (integrado al MOOP)',
+    urgenciesLabel: '50% Coaseguro en red hasta alcanzar MOOP ($7,500 Ind. / $15,000 Fam.)',
+    sampleRateHint: 'Ej. TX: $171/mes (30a), $352/mes (45a), $674/mes (Fam. 4)',
+    extraBenefitLabel:
+      'Disponible SOLO en Texas (TDI). $0 deducible + 50% coaseguro hasta MOOP + 100% ilimitado post-MOOP + 50% Rollover anual + Telemedicina $0 + Rx Valet.',
+    bullets: [
+      'Mecánica Financiera (Solo Texas • TDI): Deducible $0 (cubre desde el primer dólar), 50% coaseguro en red hasta alcanzar el MOOP de $7,500 Ind. / $15,000 Fam. (máximos separados para Enfermedad y Accidente; tope aprox. ~$15,000 facturas) y 100% ilimitado sin topes de días ni montos tras alcanzar el MOOP.',
+      '50% Rollover Anual y Red First Health PPO: El 50% del MOOP no utilizado se transfiere como crédito para reducir el MOOP del año siguiente (hasta a la mitad si no se usa). Red First Health PPO (+993,000 médicos, +5,700 hospitales, sin referidos), Telemedicina 24/7 a $0 y Farmacia Rx Valet integrada al MOOP (50% Día 1 en genéricos, marca y especialidad).',
+      'Arquitectura Bundle y Wellness Opcional: Combina póliza formal de Enfermedad + Accidente (regulado por TDI de Texas; no es Cost-Sharing ni ACA). Opción de agregar Rider de Wellness (+$19 a $75/mes aprox.: chequeo anual $200, mamografía $350, colonoscopía $1,100, pediatría hasta 7x $200, vacunas hasta 10x $70, lab hasta 3x $50).',
+      'Reglas de Suscripción y Disponibilidad TX: Disponible exclusivamente en Texas (TX). Preexistencias no excluidas: espera de 12 meses en hospitalizaciones/eventos mayores (Rx al 50% desde el Día 1; embarazo activo al contratar tiene deducible de parto de $5,000 en 1.er año). No elegible con cáncer, infarto, diabetes 1/2, VIH, lupus, hepatitis B/C, insuficiencia renal/cardíaca o fumador >4 veces/mes.'
+    ]
+  },
+  essential10000: {
+    level: 'essential10000',
+    title: 'Presidio Fortress • Essential 10K (Solo TX)',
+    shortLabel: 'Essential 10K',
+    tierLabel: 'Essential 10K • Deducible $0 • 50% Coaseguro (Solo Texas)',
+    deductibleLabel: '$0 Ind. / $0 Fam. ($5,000 si embarazo activo al contratar)',
+    moopLabel: '$10,000 Ind. / $20,000 Fam. (MOOP separado Enfermedad y Accidente • 100% ilimitado post-MOOP)',
+    pcpLabel: '50% Coaseguro en red First Health • Telemedicina 24/7 $0',
+    specialistLabel: '50% Coaseguro sin referidos (hasta llegar a MOOP $10,000/$20,000)',
+    rxLabel: 'Rx Valet 50% Día 1 (integrado al MOOP)',
+    urgenciesLabel: '50% Coaseguro en red hasta alcanzar MOOP ($10,000 Ind. / $20,000 Fam.)',
+    sampleRateHint: 'Ej. TX: $156/mes (30a), $323/mes (45a), $617/mes (Fam. 4)',
+    extraBenefitLabel:
+      'Disponible SOLO en Texas (TDI). $0 deducible + 50% coaseguro hasta MOOP + 100% ilimitado post-MOOP + 50% Rollover anual + Telemedicina $0 + Rx Valet.',
+    bullets: [
+      'Mecánica Financiera (Solo Texas • TDI): Deducible $0 (cubre desde el primer dólar), 50% coaseguro en red hasta alcanzar el MOOP de $10,000 Ind. / $20,000 Fam. (máximos separados para Enfermedad y Accidente; tope aprox. ~$20,000 facturas) y 100% ilimitado sin topes de días ni montos tras alcanzar el MOOP.',
+      '50% Rollover Anual y Red First Health PPO: El 50% del MOOP no utilizado se transfiere como crédito para reducir el MOOP del año siguiente (hasta a la mitad si no se usa). Red First Health PPO (+993,000 médicos, +5,700 hospitales, sin referidos), Telemedicina 24/7 a $0 y Farmacia Rx Valet integrada al MOOP (50% Día 1 en genéricos, marca y especialidad).',
+      'Arquitectura Bundle y Wellness Opcional: Combina póliza formal de Enfermedad + Accidente (regulado por TDI de Texas; no es Cost-Sharing ni ACA). Opción de agregar Rider de Wellness (+$19 a $75/mes aprox.: chequeo anual $200, mamografía $350, colonoscopía $1,100, pediatría hasta 7x $200, vacunas hasta 10x $70, lab hasta 3x $50).',
+      'Reglas de Suscripción y Disponibilidad TX: Disponible exclusivamente en Texas (TX). Preexistencias no excluidas: espera de 12 meses en hospitalizaciones/eventos mayores (Rx al 50% desde el Día 1; embarazo activo al contratar tiene deducible de parto de $5,000 en 1.er año). No elegible con cáncer, infarto, diabetes 1/2, VIH, lupus, hepatitis B/C, insuficiencia renal/cardíaca o fumador >4 veces/mes.'
     ]
   }
 };
@@ -802,6 +1176,31 @@ export const detectHpgLevelFromText = (text: string): HpgPlanLevel => {
   return 'preferred4000';
 };
 
+export const detectGuardLevelFromText = (text: string): GuardPlanLevel => {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('6000')) return 'guard6000';
+  if (lower.includes('4000')) return 'guard4000';
+  return 'guard5000';
+};
+
+export const detectAffordableChoiceLevelFromText = (text: string): AffordableChoiceLevel => {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('elite plus') || lower.includes('elite_plus')) return 'elite_plus';
+  if (lower.includes('elite')) return 'elite';
+  if (lower.includes('classic plus') || lower.includes('classic_plus')) return 'classic_plus';
+  return 'classic';
+};
+
+export const detectPresidioLevelFromText = (text: string): PresidioLevel => {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('2.5') || lower.includes('2500') || lower.includes('elite')) return 'elite2500';
+  if (lower.includes('7.5') || lower.includes('7500') || lower.includes('value')) return 'value7500';
+  if (lower.includes('10k') || lower.includes('10,000') || lower.includes('10000') || lower.includes('essential')) {
+    return 'essential10000';
+  }
+  return 'secure5000';
+};
+
 export const detectAhwLevelFromText = (text: string): AhwPlanLevel => {
   const lower = String(text || '').toLowerCase();
   if (lower.includes('ahw 1') || lower.includes('ahw1') || lower.includes('básico') || lower.includes('basico')) return 'ahw1';
@@ -818,8 +1217,28 @@ export const isMedMaxPlan = (plan: QuotePlan): boolean => {
   return text.includes('medmax');
 };
 
+export const isGuardPlan = (plan: QuotePlan): boolean => {
+  if (plan.planCategory === 'guard') return true;
+  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
+  if (text.includes('protectorguard')) return false;
+  return /\bguard\s*(4000|5000|6000|plans?)\b/.test(text) || text.includes('hpg3-cstm');
+};
+
+export const isAffordableChoicePlan = (plan: QuotePlan): boolean => {
+  if (plan.planCategory === 'affordable_choice') return true;
+  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
+  return text.includes('affordable choice') || text.includes('manhattanlife') || text.includes('ak7010fl');
+};
+
+export const isPresidioPlan = (plan: QuotePlan): boolean => {
+  if (plan.planCategory === 'presidio') return true;
+  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
+  return text.includes('presidio') || text.includes('fortress');
+};
+
 export const isHpgPlan = (plan: QuotePlan): boolean => {
   if (plan.planCategory === 'hpg4000') return true;
+  if (isGuardPlan(plan)) return false;
   const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
   return text.includes('protectorguard') || /\bhpg\b/.test(text);
 };
@@ -900,6 +1319,19 @@ export const getPlanFirstMonth = (plan: QuotePlan): number => {
 export const getExactOfficialBulletsForPlan = (plan: QuotePlan): string[] => {
   if (isSanitasPlan(plan) && !isHospitalWisePlan(plan)) {
     return SANITAS_OFFICIAL_BULLETS;
+  }
+  if (isGuardPlan(plan)) {
+    const level = plan.guardLevel || detectGuardLevelFromText(`${plan.planName} ${plan.tier}`);
+    return GUARD_SPECS[level].bullets;
+  }
+  if (isAffordableChoicePlan(plan)) {
+    const level =
+      plan.affordableChoiceLevel || detectAffordableChoiceLevelFromText(`${plan.planName} ${plan.tier}`);
+    return AFFORDABLE_CHOICE_SPECS[level].bullets;
+  }
+  if (isPresidioPlan(plan)) {
+    const level = plan.presidioLevel || detectPresidioLevelFromText(`${plan.planName} ${plan.tier}`);
+    return PRESIDIO_SPECS[level].bullets;
   }
   if (isHpgPlan(plan)) {
     const level = plan.hpgLevel || detectHpgLevelFromText(`${plan.planName} ${plan.tier}`);
@@ -1009,6 +1441,84 @@ export const enforceOfficialCatalogOnPlan = (
       deductibleWarning: MEDMAX_DEFAULT_WARNING,
       highlights: MEDMAX_OFFICIAL_BULLETS,
       extraBenefit: 'Red First Health + Telemedicina RelyMD $0 + Bill Negotiator; copagos aplican tras cumplir deducible.',
+      hasSanitasFee: false
+    };
+  }
+
+  if (isGuardPlan(plan)) {
+    const level = plan.guardLevel || detectGuardLevelFromText(`${plan.planName} ${plan.tier}`);
+    const spec = GUARD_SPECS[level];
+    return {
+      ...plan,
+      planCategory: 'guard',
+      guardLevel: level,
+      company: 'UnitedHealthcare / Golden Rule Insurance Company',
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `UNITEDHEALTHCARE / GOLDEN RULE • ${spec.shortLabel.toUpperCase()} • SIN DEDUCIBLE`,
+      deductible: '$0 (Sin deducible)',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: spec.extraBenefitLabel,
+      hasSanitasFee: false
+    };
+  }
+
+  if (isAffordableChoicePlan(plan)) {
+    const level =
+      plan.affordableChoiceLevel || detectAffordableChoiceLevelFromText(`${plan.planName} ${plan.tier}`);
+    const spec = AFFORDABLE_CHOICE_SPECS[level];
+    const refAge: AffordableChoiceAge =
+      plan.affordableChoiceAge && AFFORDABLE_CHOICE_AGES.includes(plan.affordableChoiceAge as AffordableChoiceAge)
+        ? (plan.affordableChoiceAge as AffordableChoiceAge)
+        : detectClosestAffordableChoiceAge(context?.ages || '');
+    const acGroup = detectAffordableChoiceGroupKey(context?.members || '', context?.ages || '');
+    const autoRate = spec.ratesByAge[refAge][acGroup].toFixed(2);
+    return {
+      ...plan,
+      planCategory: 'affordable_choice',
+      affordableChoiceLevel: level,
+      affordableChoiceAge: refAge,
+      company: 'ManhattanLife Insurance and Annuity Company',
+      planName: spec.title,
+      tier: `${spec.tierLabel} • Edad ref. ${refAge}`,
+      subtitleTag: `MANHATTANLIFE AFFORDABLE CHOICE • ${spec.shortLabel.toUpperCase()} • SIN PERÍODOS DE ESPERA`,
+      premium: parseMoney(plan.premium) > 0 ? plan.premium : autoRate,
+      deductible: '$0 (Sin deducible)',
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: spec.extraBenefitLabel,
+      hasSanitasFee: false
+    };
+  }
+
+  if (isPresidioPlan(plan)) {
+    const level = plan.presidioLevel || detectPresidioLevelFromText(`${plan.planName} ${plan.tier}`);
+    const spec = PRESIDIO_SPECS[level];
+    return {
+      ...plan,
+      planCategory: 'presidio',
+      presidioLevel: level,
+      company: 'Presidio Healthcare (TDI Texas)',
+      planName: spec.title,
+      tier: spec.tierLabel,
+      subtitleTag: `PRESIDIO FORTRESS • ${spec.shortLabel.toUpperCase()} • SOLO DISPONIBLE EN TEXAS (TX)`,
+      deductible: spec.deductibleLabel,
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: spec.extraBenefitLabel,
       hasSanitasFee: false
     };
   }
@@ -1228,6 +1738,8 @@ export interface GeoAgeAnalysis {
   sanitasNote: string;
   hpgRestrictedState: boolean;
   hpgNote: string;
+  presidioAvailable: boolean;
+  presidioNote: string;
   ages: number[];
   hasSenior65Plus: boolean;
   ageNote: string;
@@ -1342,10 +1854,27 @@ export const evaluateGeoAndAgeEligibility = (
     }
   }
 
+  const guardAvailable = !stateCode || GUARD_AVAILABLE_STATES.includes(stateCode);
+  let guardDetail = '';
+  if (stateCode) {
+    if (!guardAvailable) {
+      guardDetail = ` Guard Plans (4000/5000/6000) NO disponible en ${stateCode}.`;
+    } else if (stateCode === 'DE' || stateCode === 'MD') {
+      guardDetail = ` En ${stateCode} Guard Plans tiene edad máxima de emisión de 60 años.`;
+    }
+  }
+
+  const presidioAvailable = !stateCode || PRESIDIO_AVAILABLE_STATES.includes(stateCode);
+  const presidioNote = !stateCode
+    ? 'Presidio Fortress Plan aplica exclusivamente en Texas (TX). Ingresa un ZIP de Texas (750xx-799xx / 733xx) para validar.'
+    : presidioAvailable
+      ? 'Estado TX validado: Presidio Fortress Plan disponible con emisión formal bajo el TDI de Texas.'
+      : `⚠️ Presidio Fortress Plan NO está disponible en ${stateCode}: habilitado SOLO en Texas (TX).`;
+
   const hpgNote = hpgRestrictedState
-    ? `Variación estatal (${stateCode}): Verificar reglas locales de HPG.${hwDetail}`
+    ? `Variación estatal (${stateCode}): Verificar reglas locales de HPG.${hwDetail}${guardDetail}${!presidioAvailable ? ` Presidio Fortress: SOLO disponible en TX.` : ''}`
     : stateCode
-      ? `Estado ${stateCode}: HPG, HospitalWise${hwAvailable ? ' (disponible)' : ' (no disponible)'}, MedMax, AHW 1-6, MedAccess MVP, BMI-PHCS, AFI y ACUSA habilitados según edad.${hwDetail}`
+      ? `Estado ${stateCode}: HPG, Guard${guardAvailable ? ' (disponible)' : ' (no disponible)'}, HospitalWise${hwAvailable ? ' (disponible)' : ' (no disponible)'}, Affordable Choice, Presidio${presidioAvailable ? ' (disponible TX)' : ' (SOLO en TX)'}, MedMax, AHW 1-6, MedAccess MVP, BMI-PHCS, AFI y ACUSA.${hwDetail}${guardDetail}`
       : 'Ingresa un Estado o ZIP Code de 5 dígitos para validar disponibilidad regional.';
 
   let ageNote = '';
@@ -1370,6 +1899,8 @@ export const evaluateGeoAndAgeEligibility = (
     sanitasNote,
     hpgRestrictedState,
     hpgNote,
+    presidioAvailable,
+    presidioNote,
     ages,
     hasSenior65Plus,
     ageNote

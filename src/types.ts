@@ -122,6 +122,9 @@ export interface DailyTask {
 export type QuotePlanCategory =
   | 'medmax'
   | 'hpg4000'
+  | 'guard'
+  | 'affordable_choice'
+  | 'presidio'
   | 'ahw4'
   | 'sanitas'
   | 'hospitalwise'
@@ -134,6 +137,9 @@ export type QuotePlanCategory =
   | 'custom';
 
 export type HpgPlanLevel = 'select2000' | 'preferred4000' | 'premier5000';
+export type GuardPlanLevel = 'guard4000' | 'guard5000' | 'guard6000';
+export type AffordableChoiceLevel = 'classic' | 'classic_plus' | 'elite' | 'elite_plus';
+export type PresidioLevel = 'elite2500' | 'secure5000' | 'value7500' | 'essential10000';
 export type HospitalWiseLevel = 'basic' | 'bundle1' | 'bundle2';
 export type AhwPlanLevel = 'ahw1' | 'ahw2' | 'ahw3' | 'ahw4' | 'ahw5' | 'ahw6';
 export type MedMaxDeductibleTier = 250 | 500 | 750 | 1000 | 1500;
@@ -165,6 +171,10 @@ export interface QuotePlan {
   // Campos opcionales retrocompatibles para catálogo oficial Agente Contigo
   planCategory?: QuotePlanCategory;
   hpgLevel?: HpgPlanLevel;
+  guardLevel?: GuardPlanLevel;
+  affordableChoiceLevel?: AffordableChoiceLevel;
+  affordableChoiceAge?: number;
+  presidioLevel?: PresidioLevel;
   hospitalwiseLevel?: HospitalWiseLevel;
   ahwLevel?: AhwPlanLevel;
   medmaxDeductibleTier?: MedMaxDeductibleTier;
