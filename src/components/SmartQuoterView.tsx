@@ -702,15 +702,23 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     };
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
-    const zipWarn =
-      geoAge.sanitasAvailability === 'verify_zip'
-        ? ' ⚠️ Verifica disponibilidad en este ZIP Code.'
-        : '';
-    onShowToast(
-      'Sanitas Care Plus Agregado',
-      `${pricing.tierLabel}: $${pricing.monthlyPrice}/mes → 1.er mes $${pricing.firstMonthPrice} (con $40.00 de fee único).${zipWarn}`,
-      geoAge.sanitasAvailability === 'verify_zip' ? 'info' : 'success'
-    );
+    if (geoAge.sanitasAvailability === 'unavailable_non_fl') {
+      onShowToast(
+        '⚠️ Sanitas aplica SOLO en Florida (FL)',
+        `El estado actual (${geoAge.detectedState}) no es elegible por ahora. Cambia el ZIP a Florida (FL) o selecciona otro plan.`,
+        'info'
+      );
+    } else {
+      const zipWarn =
+        geoAge.sanitasAvailability === 'verify_zip'
+          ? ' • Aplica solo en Florida (FL).'
+          : '';
+      onShowToast(
+        'Sanitas Care Plus Agregado',
+        `${pricing.tierLabel}: $${pricing.monthlyPrice}/mes → 1.er mes $${pricing.firstMonthPrice} (con $40.00 de fee único).${zipWarn}`,
+        geoAge.sanitasAvailability === 'verify_zip' ? 'info' : 'success'
+      );
+    }
   };
 
   const addHospitalWisePlan = (level: HospitalWiseLevel = 'bundle1') => {
@@ -1978,13 +1986,13 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
         geoNotes.push(
           `✓ Validación geográfica Sanitas Care Plus (${clientLocation}): Cobertura activa en Florida con acceso a más de 50 centros médicos Sanitas${geoAge.isSouthFlorida ? ' (incluye dental y 2 urgencias/año a $0 en centros del sur de Florida)' : ''}.`
         );
-      } else if (geoAge.sanitasAvailability === 'essential_az_tx') {
+      } else if (geoAge.sanitasAvailability === 'unavailable_non_fl') {
         geoNotes.push(
-          `✓ Validación geográfica Sanitas Care (${geoAge.detectedState}): Confirmaremos disponibilidad de centro Sanitas en el código postal ${geoAge.zipCode || clientLocation}.`
+          `⚠️ Nota geográfica Sanitas Care (${clientLocation}): Esta membresía aplica EXCLUSIVAMENTE en Florida (FL) por ahora.`
         );
       } else {
         geoNotes.push(
-          `• Nota geográfica Sanitas Care (${clientLocation}): Validaremos el centro médico o cobertura Sanitas activa en su código postal antes de procesar la membresía.`
+          `• Nota geográfica Sanitas Care${clientLocation ? ` (${clientLocation})` : ''}: Aplica únicamente en Florida (FL); validaremos el centro médico Sanitas activo en su código postal antes de procesar la membresía.`
         );
       }
     }
@@ -2844,49 +2852,42 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
               </div>
 
-              {/* Validación Geográfica en Tiempo Real */}
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-[11px] space-y-1.5">
+              {/* Aviso Geográfico Exclusivo de Sanitas Care (Solo Florida) */}
+              <div
+                className={`p-3 rounded-2xl border text-[11px] space-y-1 ${
+                  geoAge.sanitasAvailability === 'unavailable_non_fl'
+                    ? 'bg-rose-50/70 border-rose-200'
+                    : geoAge.sanitasAvailability === 'plus_fl'
+                      ? 'bg-teal-50/70 border-teal-200'
+                      : 'bg-slate-50 border-slate-200'
+                }`}
+              >
                 <div className="flex items-center justify-between font-black text-slate-800 uppercase text-[10px]">
-                  <span className="flex items-center gap-1 text-[#008be3]">
-                    <MapPin className="w-3.5 h-3.5" /> Validación Geográfica (ZIP) y Edades
+                  <span className="flex items-center gap-1 text-teal-700">
+                    <MapPin className="w-3.5 h-3.5" /> Disponibilidad Sanitas Care (Solo Florida)
                   </span>
                   {geoAge.detectedState && (
-                    <span className="px-1.5 py-0.5 rounded bg-cyan-100 text-[#005b9f]">
+                    <span
+                      className={`px-1.5 py-0.5 rounded ${
+                        geoAge.detectedState === 'FL'
+                          ? 'bg-teal-100 text-teal-900'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
                       {geoAge.detectedState} {geoAge.zipCode ? `• ${geoAge.zipCode}` : ''}
                     </span>
                   )}
                 </div>
                 <p
                   className={`leading-snug font-medium ${
-                    geoAge.sanitasAvailability === 'verify_zip' ? 'text-amber-800' : 'text-teal-800'
-                  }`}
-                >
-                  • {geoAge.sanitasNote}
-                </p>
-                <p
-                  className={`leading-snug font-medium ${
-                    geoAge.hpgRestrictedState ? 'text-amber-800' : 'text-slate-600'
-                  }`}
-                >
-                  • {geoAge.hpgNote}
-                </p>
-                <p
-                  className={`leading-snug font-medium ${
-                    geoAge.detectedState && !geoAge.presidioAvailable
+                    geoAge.sanitasAvailability === 'unavailable_non_fl'
                       ? 'text-rose-700 font-bold'
-                      : geoAge.detectedState === 'TX'
-                        ? 'text-emerald-700 font-bold'
+                      : geoAge.sanitasAvailability === 'plus_fl'
+                        ? 'text-teal-800'
                         : 'text-slate-600'
                   }`}
                 >
-                  • {geoAge.presidioNote}
-                </p>
-                <p
-                  className={`leading-snug font-medium ${
-                    geoAge.hasSenior65Plus ? 'text-rose-700 font-bold' : 'text-slate-600'
-                  }`}
-                >
-                  • {geoAge.ageNote}
+                  • {geoAge.sanitasNote}
                 </p>
               </div>
             </div>
@@ -3222,17 +3223,32 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
               </div>
 
-              {/* 4. + Sanitas Care */}
+              {/* 4. + Sanitas Care (SOLO EN FLORIDA • FL) */}
               <button
                 type="button"
                 onClick={addSanitasCarePlan}
-                className="p-3 rounded-2xl border border-teal-300 bg-teal-50/80 hover:bg-teal-100/80 text-teal-950 text-left transition shadow-xs cursor-pointer flex flex-col justify-between gap-1.5 h-full"
+                className={`p-3 rounded-2xl border text-left transition shadow-xs cursor-pointer flex flex-col justify-between gap-1.5 h-full ${
+                  geoAge.sanitasAvailability === 'unavailable_non_fl'
+                    ? 'border-rose-300 bg-rose-50/70 hover:bg-rose-100/70 text-rose-950'
+                    : 'border-teal-300 bg-teal-50/80 hover:bg-teal-100/80 text-teal-950'
+                }`}
               >
                 <div className="flex items-center justify-between gap-1">
-                  <span className="font-black text-xs">+ Sanitas Care</span>
+                  <span className="font-black text-xs flex items-center gap-1.5">
+                    <span>+ Sanitas Care</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[9px] font-black ${
+                        geoAge.sanitasAvailability === 'unavailable_non_fl'
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-teal-800 text-white'
+                      }`}
+                    >
+                      SOLO FL
+                    </span>
+                  </span>
                   <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
                 </div>
-                <span className="text-[10px] font-bold opacity-85">+$40 Fee 1.er Mes Auto</span>
+                <span className="text-[10px] font-bold opacity-85">+$40 Fee 1.er Mes Auto • Solo Florida</span>
               </button>
 
               {/* 5. + HospitalWise (Basic / Bundle 1 / Bundle 2) */}
@@ -4332,7 +4348,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                         </div>
                       )}
 
-                      {/* Ajuste Rápido Sanitas Care Plus + Checkbox Fee $40 */}
+                      {/* Ajuste Rápido Sanitas Care Plus + Validación Solo Florida */}
                       {isSanitas && (
                         <div className="bg-teal-50/70 p-2.5 rounded-xl border border-teal-200 space-y-2">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4367,6 +4383,18 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                               ))}
                             </div>
                           </div>
+                          {geoAge.sanitasAvailability === 'unavailable_non_fl' ? (
+                            <div className="flex items-start gap-2 p-2 rounded-lg bg-rose-100 border border-rose-300 text-rose-900 text-[11px] font-bold">
+                              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-700" />
+                              <span>
+                                ALERTA GEOGRÁFICA: Sanitas Care aplica EXCLUSIVAMENTE en Florida (FL) por ahora. El estado actual detectado ({geoAge.detectedState}) no es elegible para emitir este plan.
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="text-[10.5px] font-bold text-teal-900">
+                              ✓ Válido SOLO en Florida (FL) • +50 centros médicos Sanitas en Florida.
+                            </p>
+                          )}
                         </div>
                       )}
 

@@ -1734,7 +1734,7 @@ export interface GeoAgeAnalysis {
   zipCode: string;
   detectedState: string;
   isSouthFlorida: boolean;
-  sanitasAvailability: 'plus_fl' | 'essential_az_tx' | 'regional_access' | 'verify_zip';
+  sanitasAvailability: 'plus_fl' | 'unavailable_non_fl' | 'verify_zip';
   sanitasNote: string;
   hpgRestrictedState: boolean;
   hpgNote: string;
@@ -1816,19 +1816,16 @@ export const evaluateGeoAndAgeEligibility = (
 
   let sanitasAvailability: GeoAgeAnalysis['sanitasAvailability'] = 'verify_zip';
   let sanitasNote =
-    'Sanitas Care opera principalmente en FL, TX, AZ, NJ, CT y TN. Verifica cobertura exacta del centro Sanitas para este ZIP Code.';
+    'Sanitas Care aplica únicamente en Florida (FL) por ahora. Verifica disponibilidad del centro Sanitas para el ZIP Code de Florida.';
 
   if (stateCode === 'FL') {
     sanitasAvailability = 'plus_fl';
     sanitasNote = isSouthFlorida
-      ? `ZIP ${zipCode || 'Sur de FL'} validado: Sanitas Care Plus disponible (+50 centros médicos en Florida; dental y 2 urgencias/año $0 en centros del sur de FL).`
-      : `Estado FL (${zipCode || 'Florida'}): Sanitas Care Plus disponible en zonas con centros médicos Sanitas (validar clínica cercana al ZIP).`;
-  } else if (stateCode === 'TX' || stateCode === 'AZ') {
-    sanitasAvailability = 'essential_az_tx';
-    sanitasNote = `Estado ${stateCode} (${zipCode || stateCode}): Disponible Sanitas Care Essential / Access según cobertura de centros en el ZIP.`;
-  } else if (stateCode === 'NJ' || stateCode === 'CT' || stateCode === 'TN') {
-    sanitasAvailability = 'regional_access';
-    sanitasNote = `Estado ${stateCode}: Disponibilidad regional de Sanitas Access; confirmar centro médico Sanitas activo en el ZIP Code ${zipCode || ''}.`;
+      ? `ZIP ${zipCode || 'Sur de FL'} validado: Sanitas Care Plus disponible en Florida (+50 centros médicos; dental y 2 urgencias/año $0 en centros del sur de FL).`
+      : `Estado FL (${zipCode || 'Florida'}): Sanitas Care Plus disponible solo en Florida (validar clínica Sanitas cercana al ZIP).`;
+  } else if (stateCode) {
+    sanitasAvailability = 'unavailable_non_fl';
+    sanitasNote = `⚠️ Sanitas Care NO está disponible en ${stateCode}: por ahora aplica SOLO para Florida (FL).`;
   }
 
   const restrictedStatesHPG = ['NY', 'CA', 'MA', 'WA', 'VT', 'NH', 'NJ', 'MN', 'OR', 'CT', 'DC', 'CO', 'NM', 'RI', 'HI'];
