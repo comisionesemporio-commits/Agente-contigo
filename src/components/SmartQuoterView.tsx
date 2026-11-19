@@ -3,14 +3,11 @@ import {
   AcusaLevel,
   AffordableChoiceLevel,
   AfiLevel,
-  AhwPlanLevel,
   BmiPhcsLevel,
   EnrollFamilyTier,
   GuardPlanLevel,
   HospitalWiseLevel,
   HpgPlanLevel,
-  MedAccessAgeBracket,
-  MedAccessLevel,
   MedMaxAgeBracket,
   MedMaxDeductibleTier,
   MedMaxScope,
@@ -34,7 +31,6 @@ import {
   AFFORDABLE_CHOICE_AGES,
   AFFORDABLE_CHOICE_SPECS,
   AFI_SPECS,
-  AHW_SPECS,
   AffordableChoiceAge,
   AffordableChoiceGroupKey,
   BMI_PHCS_SPECS,
@@ -43,7 +39,6 @@ import {
   HOSPITALWISE_OFFICIAL_BULLETS,
   HOSPITALWISE_SPECS,
   HPG_SPECS,
-  MEDACCESS_SPECS,
   MEDMAX_DEDUCTIBLE_OPTIONS,
   MEDMAX_DEFAULT_WARNING,
   MEDMAX_OFFICIAL_BULLETS,
@@ -51,13 +46,11 @@ import {
   SANITAS_OFFICIAL_BULLETS,
   detectAffordableChoiceGroupKey,
   detectAffordableChoiceLevelFromText,
-  detectAhwLevelFromText,
   detectClosestAffordableChoiceAge,
   detectEnrollFamilyTier,
   detectGuardLevelFromText,
   detectHospitalWiseLevelFromText,
   detectHpgLevelFromText,
-  detectMedAccessAgeBracket,
   detectMedMaxAgeBracket,
   detectPresidioLevelFromText,
   enforceOfficialCatalogOnPlan,
@@ -74,12 +67,10 @@ import {
   isAcusaPlan,
   isAffordableChoicePlan,
   isAfiPlan,
-  isAhwPlan,
   isBmiPhcsPlan,
   isGuardPlan,
   isHpgPlan,
   isHospitalWisePlan,
-  isMedAccessPlan,
   isMedMaxPlan,
   isPresidioPlan,
   isSanitasPlan,
@@ -507,73 +498,6 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
         'success'
       );
     }
-  };
-
-  const addAhwPlan = (level: AhwPlanLevel = 'ahw4') => {
-    const newId = `plan_${level}_` + Date.now();
-    const spec = AHW_SPECS[level];
-    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
-    const rate = spec.rates[famTier].toFixed(2);
-    const created: QuotePlan = {
-      id: newId,
-      tag: `PLAN DE SALUD ${spec.shortLabel.toUpperCase()}`,
-      planCategory: 'ahw4',
-      ahwLevel: level,
-      medmaxFamilyTier: famTier,
-      company: `${spec.shortLabel} (Red First Health)`,
-      planName: spec.title,
-      tier: spec.tierLabel,
-      subtitleTag: `RED FIRST HEALTH PPO • RELYMD $0 • ${spec.shortLabel.toUpperCase()}`,
-      premium: rate,
-      deductible: '$0',
-      moop: spec.moopLabel,
-      primaryCare: spec.pcpLabel,
-      specialist: spec.specialistLabel,
-      genericRx: spec.rxLabel,
-      urgencies: spec.urgenciesLabel,
-      highlights: spec.bullets,
-      extraBenefit: 'Incluye Red First Health, Telemedicina RelyMD $0 y Bill Negotiator.',
-      clientSummary: `${spec.title}: $${rate}/mes con beneficios oficiales de red First Health.`,
-      isRecommended: false
-    };
-    setPlans(prev => [...prev, created]);
-    setLastAddedPlanId(newId);
-    onShowToast(`${spec.shortLabel} Agregado`, `Tarifa oficial cargada ($${rate}/mes) con beneficios exactos de ${spec.shortLabel}.`, 'success');
-  };
-
-  const addMedAccessPlan = (level: MedAccessLevel = 'pro') => {
-    const newId = `plan_medaccess_${level}_` + Date.now();
-    const spec = MEDACCESS_SPECS[level];
-    const ageBracket = detectMedAccessAgeBracket(clientAges);
-    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
-    const rate = spec.rates[ageBracket][famTier].toFixed(2);
-
-    const created: QuotePlan = {
-      id: newId,
-      tag: `MEDACCESS ${spec.shortLabel.toUpperCase()}`,
-      planCategory: 'medaccess',
-      medaccessLevel: level,
-      medaccessAgeBracket: ageBracket,
-      medmaxFamilyTier: famTier,
-      company: 'MedAccess MVP (Red First Health)',
-      planName: spec.title,
-      tier: `${spec.shortLabel} • Edad ${ageBracket} años`,
-      subtitleTag: `MEDACCESS ${spec.shortLabel.toUpperCase()} • RED FIRST HEALTH • $0 DEDUCIBLE`,
-      premium: rate,
-      deductible: '$0 (Sin deducible)',
-      moop: spec.moopLabel,
-      primaryCare: spec.pcpLabel,
-      specialist: spec.specialistLabel,
-      genericRx: spec.rxLabel,
-      urgencies: spec.urgenciesLabel,
-      highlights: spec.bullets,
-      extraBenefit: 'Red First Health PPO + Telemedicina RelyMD $0 + Bill Negotiator.',
-      clientSummary: `${spec.title} (Edad ${ageBracket}): $${rate}/mes, $0 deducible.`,
-      isRecommended: false
-    };
-    setPlans(prev => [...prev, created]);
-    setLastAddedPlanId(newId);
-    onShowToast(`${spec.title} Agregado`, `Tarifa oficial Edad ${ageBracket}: $${rate}/mes.`, 'success');
   };
 
   const addBmiPhcsPlan = (level: BmiPhcsLevel = 'value') => {
@@ -1136,74 +1060,6 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     );
   };
 
-  // Actualizar AHW 1-6 por nivel y grupo familiar
-  const updateAhwConfig = (
-    id: string,
-    updates: Partial<{ level: AhwPlanLevel; familyTier: EnrollFamilyTier }>
-  ) => {
-    setPlans(prev =>
-      prev.map(p => {
-        if (p.id !== id) return p;
-        const nextLevel = updates.level || p.ahwLevel || detectAhwLevelFromText(`${p.planName} ${p.tier}`);
-        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
-        const spec = AHW_SPECS[nextLevel];
-        return {
-          ...p,
-          planCategory: 'ahw4',
-          ahwLevel: nextLevel,
-          medmaxFamilyTier: nextFam,
-          company: `${spec.shortLabel} (Red First Health)`,
-          planName: spec.title,
-          tier: spec.tierLabel,
-          subtitleTag: `RED FIRST HEALTH PPO • RELYMD $0 • ${spec.shortLabel.toUpperCase()}`,
-          premium: spec.rates[nextFam].toFixed(2),
-          deductible: '$0',
-          moop: spec.moopLabel,
-          primaryCare: spec.pcpLabel,
-          specialist: spec.specialistLabel,
-          genericRx: spec.rxLabel,
-          urgencies: spec.urgenciesLabel,
-          highlights: spec.bullets
-        };
-      })
-    );
-  };
-
-  // Actualizar MedAccess MVP por nivel, rango de edad (18-45 / 46-64) y grupo familiar
-  const updateMedAccessConfig = (
-    id: string,
-    updates: Partial<{ level: MedAccessLevel; ageBracket: MedAccessAgeBracket; familyTier: EnrollFamilyTier }>
-  ) => {
-    setPlans(prev =>
-      prev.map(p => {
-        if (p.id !== id) return p;
-        const nextLevel = updates.level || p.medaccessLevel || 'pro';
-        const nextAge = updates.ageBracket || p.medaccessAgeBracket || detectMedAccessAgeBracket(clientAges);
-        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
-        const spec = MEDACCESS_SPECS[nextLevel];
-        return {
-          ...p,
-          planCategory: 'medaccess',
-          medaccessLevel: nextLevel,
-          medaccessAgeBracket: nextAge,
-          medmaxFamilyTier: nextFam,
-          company: 'MedAccess MVP (Red First Health)',
-          planName: spec.title,
-          tier: `${spec.shortLabel} • Edad ${nextAge} años`,
-          subtitleTag: `MEDACCESS ${spec.shortLabel.toUpperCase()} • RED FIRST HEALTH • $0 DEDUCIBLE`,
-          premium: spec.rates[nextAge][nextFam].toFixed(2),
-          deductible: '$0 (Sin deducible)',
-          moop: spec.moopLabel,
-          primaryCare: spec.pcpLabel,
-          specialist: spec.specialistLabel,
-          genericRx: spec.rxLabel,
-          urgencies: spec.urgenciesLabel,
-          highlights: spec.bullets
-        };
-      })
-    );
-  };
-
   // Actualizar BMI-PHCS (Basic / Value / Advantage)
   const changeBmiLevel = (id: string, level: BmiPhcsLevel) => {
     const spec = BMI_PHCS_SPECS[level];
@@ -1345,16 +1201,6 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
                 presidioLevel: next.presidioLevel || 'secure5000',
                 planName: PRESIDIO_SPECS[next.presidioLevel || 'secure5000'].title
               },
-              ctx
-            );
-          } else if (value === 'ahw4') {
-            next = enforceOfficialCatalogOnPlan(
-              { ...next, planCategory: 'ahw4', ahwLevel: next.ahwLevel || 'ahw4', planName: AHW_SPECS[next.ahwLevel || 'ahw4'].title, premium: '' },
-              ctx
-            );
-          } else if (value === 'medaccess') {
-            next = enforceOfficialCatalogOnPlan(
-              { ...next, planCategory: 'medaccess', medaccessLevel: next.medaccessLevel || 'pro', premium: '' },
               ctx
             );
           } else if (value === 'bmi_phcs') {
@@ -1641,7 +1487,7 @@ Contexto del cliente:
 - Edad(es) de los solicitantes: ${clientAges || 'No especificadas'}
 
 Instrucciones estrictas:
-1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, Guard 4000/5000/6000, ManhattanLife Affordable Choice Classic/Classic Plus/Elite/Elite Plus, Presidio Fortress Elite 2.5K/Secure 5K/Value 7.5K/Essential 10K solo TX, MedMax, AHW 1-6, MedAccess MVP Basic/Pro, BMI-PHCS Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, "guardLevel" ("guard4000", "guard5000" o "guard6000") si es Guard Plans, "affordableChoiceLevel" ("classic", "classic_plus", "elite" o "elite_plus") si es Affordable Choice, "presidioLevel" ("elite2500", "secure5000", "value7500" o "essential10000") si es Presidio Fortress, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
+1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, Guard 4000/5000/6000, ManhattanLife Affordable Choice Classic/Classic Plus/Elite/Elite Plus, Presidio Fortress Elite 2.5K/Secure 5K/Value 7.5K/Essential 10K solo TX, MedMax, BMI-PHCS Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, "guardLevel" ("guard4000", "guard5000" o "guard6000") si es Guard Plans, "affordableChoiceLevel" ("classic", "classic_plus", "elite" o "elite_plus") si es Affordable Choice, "presidioLevel" ("elite2500", "secure5000", "value7500" o "essential10000") si es Presidio Fortress, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
 2. Si es un plan ACA (Obamacare), extrae EXACTAMENTE de la captura/PDF: Aseguradora, Nombre exacto del plan, Nivel (Bronce/Plata/Oro), ID del plan ("planIdCode"), Prima con crédito fiscal ("premium"), Ahorro mensual o crédito fiscal ("subsidyAmount"), Deducible anual ("deductible"), Máximo de bolsillo ("moop"), Requisito de referido ("referralRequired"), y desglosa las 4 áreas médicas exactas ("primaryCare", "specialist", "acaLabsImaging", "acaErHospital", "acaRxTiers").
 
 Responde ÚNICAMENTE un array JSON válido con esta estructura:
@@ -1650,7 +1496,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     "company": "Aseguradora",
     "planName": "Nombre exacto del plan",
     "tier": "Nivel (Bronce / Plata / Oro / etc.)",
-    "planCategory": "Una de: medmax | hpg4000 | guard | affordable_choice | presidio | ahw4 | medaccess | bmi_phcs | afi | acusa | sanitas | hospitalwise | aca | custom",
+    "planCategory": "Una de: medmax | hpg4000 | guard | affordable_choice | presidio | bmi_phcs | afi | acusa | sanitas | hospitalwise | aca | custom",
     "hpgLevel": "Solo si es HPG: select2000 | preferred4000 | premier5000",
     "guardLevel": "Solo si es Guard Plans: guard4000 | guard5000 | guard6000",
     "affordableChoiceLevel": "Solo si es Affordable Choice: classic | classic_plus | elite | elite_plus",
@@ -1700,7 +1546,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       const parsedPlans = JSON.parse(cleanJson);
 
       if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
-        const validCategories = ['medmax', 'hpg4000', 'guard', 'affordable_choice', 'presidio', 'ahw4', 'medaccess', 'bmi_phcs', 'afi', 'acusa', 'sanitas', 'hospitalwise', 'aca', 'custom'];
+        const validCategories = ['medmax', 'hpg4000', 'guard', 'affordable_choice', 'presidio', 'bmi_phcs', 'afi', 'acusa', 'sanitas', 'hospitalwise', 'aca', 'custom'];
         const mapped: QuotePlan[] = parsedPlans.map((p, idx) => {
           const combinedName = `${p.company || ''} ${p.planName || ''} ${p.tier || ''}`.toLowerCase();
           const isExplicitGuard =
@@ -1711,31 +1557,27 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
               ? p.planCategory
               : combinedName.includes('medmax')
                 ? 'medmax'
-                : combinedName.includes('medaccess') || combinedName.includes('mvp basic') || combinedName.includes('mvp pro')
-                  ? 'medaccess'
-                  : combinedName.includes('bmi') && combinedName.includes('phcs')
-                    ? 'bmi_phcs'
-                    : /\bafi\b/.test(combinedName) || combinedName.includes('3500 hsa') || combinedName.includes('3500 copay')
-                      ? 'afi'
-                      : combinedName.includes('acusa') || combinedName.includes('vault') || combinedName.includes('bronze 2') || combinedName.includes('silver 2')
-                        ? 'acusa'
-                        : combinedName.includes('affordable choice') || combinedName.includes('manhattanlife') || combinedName.includes('manhattan life')
-                          ? 'affordable_choice'
-                          : combinedName.includes('presidio') || combinedName.includes('fortress')
-                            ? 'presidio'
-                            : combinedName.includes('hospitalwise')
-                              ? 'hospitalwise'
-                              : isExplicitGuard
-                                ? 'guard'
-                                : combinedName.includes('protectorguard') || /\bhpg\b/.test(combinedName)
-                                  ? 'hpg4000'
-                                  : combinedName.includes('ahw')
-                                    ? 'ahw4'
-                                    : combinedName.includes('sanitas')
-                                      ? 'sanitas'
-                                      : p.planIdCode || p.subsidyAmount || p.acaRxTiers
-                                        ? 'aca'
-                                        : 'custom';
+                : combinedName.includes('bmi') && combinedName.includes('phcs')
+                  ? 'bmi_phcs'
+                  : /\bafi\b/.test(combinedName) || combinedName.includes('3500 hsa') || combinedName.includes('3500 copay')
+                    ? 'afi'
+                    : combinedName.includes('acusa') || combinedName.includes('vault') || combinedName.includes('bronze 2') || combinedName.includes('silver 2')
+                      ? 'acusa'
+                      : combinedName.includes('affordable choice') || combinedName.includes('manhattanlife') || combinedName.includes('manhattan life')
+                        ? 'affordable_choice'
+                        : combinedName.includes('presidio') || combinedName.includes('fortress')
+                          ? 'presidio'
+                          : combinedName.includes('hospitalwise')
+                            ? 'hospitalwise'
+                            : isExplicitGuard
+                              ? 'guard'
+                              : combinedName.includes('protectorguard') || /\bhpg\b/.test(combinedName)
+                                ? 'hpg4000'
+                                : combinedName.includes('sanitas')
+                                  ? 'sanitas'
+                                  : p.planIdCode || p.subsidyAmount || p.acaRxTiers
+                                    ? 'aca'
+                                    : 'custom';
 
           const hpgLevelDetected: HpgPlanLevel | undefined =
             detectedCategory === 'hpg4000'
@@ -3198,31 +3040,6 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
               </div>
 
-              {/* 3. + AHW (1 al 6) con selector exacto */}
-              <div className="p-2.5 rounded-2xl border border-indigo-300 bg-indigo-50/70 text-indigo-950 flex flex-col justify-between gap-1.5 shadow-xs h-full">
-                <button
-                  type="button"
-                  onClick={() => addAhwPlan('ahw4')}
-                  className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
-                >
-                  <span className="font-black text-xs">+ AHW (1 al 6)</span>
-                  <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                </button>
-                <div className="grid grid-cols-6 gap-0.5">
-                  {(['ahw1', 'ahw2', 'ahw3', 'ahw4', 'ahw5', 'ahw6'] as AhwPlanLevel[]).map((lvl, idx) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => addAhwPlan(lvl)}
-                      className="py-1 rounded bg-white hover:bg-indigo-600 hover:text-white border border-indigo-200 text-[10px] font-black transition cursor-pointer text-center"
-                      title={`Agregar ${AHW_SPECS[lvl].title}`}
-                    >
-                      {idx + 1}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* 4. + Sanitas Care (SOLO EN FLORIDA • FL) */}
               <button
                 type="button"
@@ -3273,34 +3090,6 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                       {HOSPITALWISE_SPECS[lvl].shortLabel}
                     </button>
                   ))}
-                </div>
-              </div>
-
-              {/* 6. + MedAccess MVP */}
-              <div className="p-2.5 rounded-2xl border border-violet-300 bg-violet-50/60 text-violet-950 flex flex-col justify-between gap-1.5 shadow-xs h-full">
-                <button
-                  type="button"
-                  onClick={() => addMedAccessPlan('pro')}
-                  className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
-                >
-                  <span className="font-black text-xs">+ MedAccess MVP</span>
-                  <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                </button>
-                <div className="grid grid-cols-2 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => addMedAccessPlan('basic')}
-                    className="py-1 px-1.5 rounded-lg bg-white hover:bg-violet-600 hover:text-white border border-violet-200 text-[10px] font-black transition cursor-pointer text-center"
-                  >
-                    MVP Basic
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addMedAccessPlan('pro')}
-                    className="py-1 px-1.5 rounded-lg bg-white hover:bg-violet-600 hover:text-white border border-violet-200 text-[10px] font-black transition cursor-pointer text-center"
-                  >
-                    MVP Pro
-                  </button>
                 </div>
               </div>
 
@@ -3466,8 +3255,6 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                   const isAffordableChoice = isAffordableChoicePlan(plan);
                   const isPresidio = isPresidioPlan(plan);
                   const isHpg = isHpgPlan(plan);
-                  const isAhw = isAhwPlan(plan);
-                  const isMedAccess = isMedAccessPlan(plan);
                   const isBmiPhcs = isBmiPhcsPlan(plan);
                   const isAfi = isAfiPlan(plan);
                   const isAcusa = isAcusaPlan(plan);
@@ -3505,12 +3292,6 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                     ? validateMedMaxDeductible(plan.deductible, currentMedMaxScope)
                     : { isValid: true, reason: '', closestTier: 750 as MedMaxDeductibleTier };
 
-                  const currentAhwLevel: AhwPlanLevel =
-                    plan.ahwLevel || detectAhwLevelFromText(`${plan.planName} ${plan.tier}`);
-                  const currentMedAccessLevel: MedAccessLevel =
-                    plan.medaccessLevel || (plan.planName.toLowerCase().includes('basic') ? 'basic' : 'pro');
-                  const currentMedAccessAge: MedAccessAgeBracket =
-                    plan.medaccessAgeBracket || detectMedAccessAgeBracket(clientAges);
                   const currentBmiLevel: BmiPhcsLevel =
                     plan.bmiLevel ||
                     (plan.planName.toLowerCase().includes('advantage')
@@ -3555,8 +3336,6 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                             <option value="guard">Guard Plans (4000/5000/6000)</option>
                             <option value="affordable_choice">Affordable Choice (ManhattanLife)</option>
                             <option value="presidio">Presidio Fortress (Solo TX)</option>
-                            <option value="ahw4">AHW 1 al 6 (First Health)</option>
-                            <option value="medaccess">MedAccess MVP (Basic/Pro)</option>
                             <option value="bmi_phcs">BMI-PHCS (Red PHCS)</option>
                             <option value="afi">AFI Major Medical (3500)</option>
                             <option value="acusa">ACUSA Vault (Bronze/Silver)</option>
@@ -3917,120 +3696,6 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                               </button>
                             </div>
                           )}
-                        </div>
-                      )}
-
-                      {/* Selector AHW 1 al 6 + Grupo Familiar */}
-                      {isAhw && (
-                        <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-[10px] font-black uppercase text-indigo-900">
-                              Nivel AHW (1 al 6 • Red First Health):
-                            </span>
-                            <div className="flex flex-wrap gap-1">
-                              {(['ahw1', 'ahw2', 'ahw3', 'ahw4', 'ahw5', 'ahw6'] as AhwPlanLevel[]).map(lvl => (
-                                <button
-                                  key={lvl}
-                                  type="button"
-                                  onClick={() => updateAhwConfig(plan.id, { level: lvl })}
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer transition ${
-                                    currentAhwLevel === lvl
-                                      ? 'bg-indigo-600 text-white border-indigo-700'
-                                      : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
-                                  }`}
-                                >
-                                  {AHW_SPECS[lvl].shortLabel}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-[10px] font-bold text-indigo-900">Tarifa Oficial por Grupo:</span>
-                            <div className="flex flex-wrap gap-1">
-                              {[
-                                { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
-                                { key: 'pareja' as EnrollFamilyTier, label: 'Pareja' },
-                                { key: 'hijos' as EnrollFamilyTier, label: 'Padre+Hijos' },
-                                { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
-                              ].map(opt => (
-                                <button
-                                  key={opt.key}
-                                  type="button"
-                                  onClick={() => updateAhwConfig(plan.id, { familyTier: opt.key })}
-                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
-                                    currentMedMaxFam === opt.key
-                                      ? 'bg-slate-900 text-white border-slate-900'
-                                      : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
-                                  }`}
-                                >
-                                  {opt.label} (${AHW_SPECS[currentAhwLevel].rates[opt.key].toFixed(2)})
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Selector MedAccess MVP (Basic/Pro + Edad 18-45 / 46-64 + Familia) */}
-                      {isMedAccess && (
-                        <div className="bg-violet-50/70 p-2.5 rounded-xl border border-violet-200 space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-black uppercase text-violet-950">MedAccess MVP:</span>
-                              {(['basic', 'pro'] as MedAccessLevel[]).map(lvl => (
-                                <button
-                                  key={lvl}
-                                  type="button"
-                                  onClick={() => updateMedAccessConfig(plan.id, { level: lvl })}
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
-                                    currentMedAccessLevel === lvl
-                                      ? 'bg-violet-700 text-white border-violet-800'
-                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
-                                  }`}
-                                >
-                                  {MEDACCESS_SPECS[lvl].shortLabel}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-bold text-violet-900">Edad:</span>
-                              {(['18-45', '46-64'] as MedAccessAgeBracket[]).map(age => (
-                                <button
-                                  key={age}
-                                  type="button"
-                                  onClick={() => updateMedAccessConfig(plan.id, { ageBracket: age })}
-                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
-                                    currentMedAccessAge === age
-                                      ? 'bg-slate-900 text-white border-slate-900'
-                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
-                                  }`}
-                                >
-                                  {age} años
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {[
-                              { key: 'empleado' as EnrollFamilyTier, label: 'Empleado' },
-                              { key: 'pareja' as EnrollFamilyTier, label: 'Emp.+Pareja' },
-                              { key: 'hijos' as EnrollFamilyTier, label: 'Emp.+Hijos' },
-                              { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
-                            ].map(opt => (
-                              <button
-                                key={opt.key}
-                                type="button"
-                                onClick={() => updateMedAccessConfig(plan.id, { familyTier: opt.key })}
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
-                                  currentMedMaxFam === opt.key
-                                    ? 'bg-violet-600 text-white border-violet-700'
-                                    : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
-                                }`}
-                              >
-                                {opt.label} (${MEDACCESS_SPECS[currentMedAccessLevel].rates[currentMedAccessAge][opt.key].toFixed(2)})
-                              </button>
-                            ))}
-                          </div>
                         </div>
                       )}
 
@@ -4859,7 +4524,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             </div>
 
             <p className="text-slate-600 leading-relaxed">
-              Para analizar capturas de cotizaciones y extraer automáticamente planes ACA, HPG, Guard, Affordable Choice, Presidio (TX), MedMax, AHW 4, Sanitas o HospitalWise, conecta tu API Key de Gemini.
+              Para analizar capturas de cotizaciones y extraer automáticamente planes ACA, HPG, Guard, Affordable Choice, Presidio (TX), MedMax, BMI-PHCS, AFI, ACUSA, Sanitas o HospitalWise, conecta tu API Key de Gemini.
             </p>
 
             <div className="space-y-1">

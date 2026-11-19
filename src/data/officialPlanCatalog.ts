@@ -2,14 +2,11 @@ import {
   AcusaLevel,
   AffordableChoiceLevel,
   AfiLevel,
-  AhwPlanLevel,
   BmiPhcsLevel,
   EnrollFamilyTier,
   GuardPlanLevel,
   HospitalWiseLevel,
   HpgPlanLevel,
-  MedAccessAgeBracket,
-  MedAccessLevel,
   MedMaxAgeBracket,
   MedMaxDeductibleTier,
   MedMaxScope,
@@ -107,13 +104,6 @@ export const detectMedMaxAgeBracket = (agesText: string): MedMaxAgeBracket => {
   if (refAge <= 44) return '30-44';
   if (refAge <= 54) return '45-54';
   return '55-64';
-};
-
-export const detectMedAccessAgeBracket = (agesText: string): MedAccessAgeBracket => {
-  const ages = extractAgesArray(agesText);
-  const adultAges = ages.filter(a => a >= 18);
-  const refAge = adultAges.length > 0 ? Math.max(...adultAges) : ages[0] || 30;
-  return refAge >= 46 ? '46-64' : '18-45';
 };
 
 // ============================================================
@@ -691,202 +681,7 @@ export const PRESIDIO_SPECS: Record<PresidioLevel, PresidioSpec> = {
 };
 
 // ============================================================
-// 3. AHW 1 AL 6 (GUÍA COMPARATIVA ENROLL PRIME • RED FIRST HEALTH)
-// ============================================================
-
-export interface AhwSpec {
-  level: AhwPlanLevel;
-  shortLabel: string;
-  title: string;
-  tierLabel: string;
-  rates: Record<EnrollFamilyTier, number>;
-  moopLabel: string;
-  pcpLabel: string;
-  specialistLabel: string;
-  rxLabel: string;
-  urgenciesLabel: string;
-  bullets: string[];
-}
-
-const AHW_PREVENTIVE_BULLET =
-  'Cuidado Preventivo ($0 en proveedores no hospitalarios First Health) y Extras: Examen físico anual (1/año), Mamografía 2D (mujeres 50+, c/2 años), Papanicolaou (mujeres 21-65, c/3 años), Presión/Diabetes (adultos en riesgo, 1/año), Cáncer colorrectal (adultos 50-75, kit c/5 años) y Control Niño Sano (1/año). Incluye Telemedicina 24/7 RelyMD $0 y Bill Negotiator.';
-
-export const AHW_SPECS: Record<AhwPlanLevel, AhwSpec> = {
-  ahw1: {
-    level: 'ahw1',
-    shortLabel: 'AHW 1',
-    title: 'Plan de Salud AHW 1 Básico (Red First Health)',
-    tierLabel: 'AHW 1 Básico • Red First Health PPO ($0 Deducible)',
-    rates: { empleado: 139.99, pareja: 169.99, hijos: 164.99, familiar: 209.99 },
-    moopLabel: 'Tope Hospital $5,000/año',
-    pcpLabel: '3 al año ($25)',
-    specialistLabel: '1 al año ($50)',
-    rxLabel: '$0 Genérico Preventivo (30 días)',
-    urgenciesLabel: 'Urgencias 1/año ($50) • ER/Amb. no incl.',
-    bullets: [
-      'Atención Ambulatoria y Estudios: Visita Primaria 3 al año ($25 copago), Especialista / Urgent Care 1 al año ($50). Laboratorio y diagnósticos no incluidos.',
-      'Beneficios Hospitalarios: Hospitalización $1,000/día (máximo hospitalario $5,000 al año). Cirugía y Emergencia/Ambulancia no incluidas en este nivel.',
-      'Farmacia (hasta 30 días): Genérico preventivo $0 (Genérico preferido y Marca no cubiertos).',
-      AHW_PREVENTIVE_BULLET
-    ]
-  },
-  ahw2: {
-    level: 'ahw2',
-    shortLabel: 'AHW 2',
-    title: 'Plan de Salud AHW 2 Plus (Red First Health)',
-    tierLabel: 'AHW 2 Plus • Red First Health PPO ($0 Deducible)',
-    rates: { empleado: 159.99, pareja: 199.99, hijos: 195.99, familiar: 239.99 },
-    moopLabel: 'Tope Hospital $10,000/año',
-    pcpLabel: '4 al año ($25)',
-    specialistLabel: '2 al año ($50)',
-    rxLabel: '$0 Prev. / $5 Preferido (30 días)',
-    urgenciesLabel: 'Urgencias 2/año ($50) • ER/Amb. no incl.',
-    bullets: [
-      'Atención Ambulatoria y Estudios: Visita Primaria 4 al año ($25 copago), Especialista / Urgent Care 2 al año ($50). Laboratorio y diagnósticos no incluidos.',
-      'Beneficios Hospitalarios: Hospitalización $1,000/día (máximo hospitalario $10,000 al año). Cirugía y Emergencia/Ambulancia no incluidas en este nivel.',
-      'Farmacia (hasta 30 días): Genérico preventivo $0 y Genérico preferido $5 (Marca no cubierta).',
-      AHW_PREVENTIVE_BULLET
-    ]
-  },
-  ahw3: {
-    level: 'ahw3',
-    shortLabel: 'AHW 3',
-    title: 'Plan de Salud AHW 3 Balance (Red First Health)',
-    tierLabel: 'AHW 3 Balance • Red First Health PPO ($0 Deducible)',
-    rates: { empleado: 179.99, pareja: 249.99, hijos: 235.99, familiar: 289.99 },
-    moopLabel: 'Tope Hospital $15,000/año',
-    pcpLabel: '4 al año ($25)',
-    specialistLabel: '4 al año ($50)',
-    rxLabel: '$0 Prev. / $5 Pref. / $40 Marca (30 días)',
-    urgenciesLabel: 'Urgencias 4/año ($50) • ER/Amb. no incl.',
-    bullets: [
-      'Atención Ambulatoria y Estudios: Visita Primaria 4 al año ($25 copago), Especialista / Urgent Care 4 al año ($50). Laboratorio y diagnósticos no incluidos.',
-      'Beneficios Hospitalarios: Hospitalización $1,000/día (máximo hospitalario $15,000 al año). Cirugía y Emergencia/Ambulancia no incluidas en este nivel.',
-      'Farmacia (hasta 30 días): Genérico preventivo $0, Genérico preferido $5 y Marca (con autorización previa) $40.',
-      AHW_PREVENTIVE_BULLET
-    ]
-  },
-  ahw4: {
-    level: 'ahw4',
-    shortLabel: 'AHW 4',
-    title: 'Plan de Salud AHW 4 Hospitalario (Red First Health)',
-    tierLabel: 'AHW 4 Hospitalario • Red First Health PPO ($0 Deducible)',
-    rates: { empleado: 199.99, pareja: 279.99, hijos: 269.99, familiar: 324.99 },
-    moopLabel: 'Tope Hospital $10,000/año • Tope Cirugía $2,000/año',
-    pcpLabel: '4 al año ($50) + Preventivo $0',
-    specialistLabel: '4 al año ($75)',
-    rxLabel: '$0 Prev. / $5 Pref. / $40 Marca (30 días)',
-    urgenciesLabel: 'UC 4/año ($75) • ER $1,000 / Amb. $500',
-    bullets: [
-      'Atención Ambulatoria: Visita Primaria 4 al año ($50 copago), Especialista / Urgent Care 4 al año ($75 copago). Laboratorio y diagnósticos no incluidos.',
-      'Beneficios Hospitalarios: Hospitalización $1,000/día (máximo hospitalario $10,000 al año). Cirugía hospitalaria o ambulatoria $1,000 (máximo $2,000 al año). Emergencia $1,000 y Ambulancia $500.',
-      'Farmacia (hasta 30 días): Genérico preventivo $0, Genérico preferido $5 y Marca (con autorización previa) $40.',
-      AHW_PREVENTIVE_BULLET
-    ]
-  },
-  ahw5: {
-    level: 'ahw5',
-    shortLabel: 'AHW 5',
-    title: 'Plan de Salud AHW 5 Premium (Red First Health)',
-    tierLabel: 'AHW 5 Premium • Red First Health PPO ($0 Deducible)',
-    rates: { empleado: 219.99, pareja: 319.99, hijos: 309.99, familiar: 374.99 },
-    moopLabel: 'Tope Hospital $15,000/año • Tope Cirugía $4,500/año',
-    pcpLabel: '5 al año ($50) + Preventivo $0',
-    specialistLabel: '5 al año ($75)',
-    rxLabel: '$0 Prev. / $5 Pref. / $40 Marca (30 días)',
-    urgenciesLabel: 'UC 5/año ($75) • ER $1,000 / Amb. $500',
-    bullets: [
-      'Atención Ambulatoria: Visita Primaria 5 al año ($50 copago), Especialista / Urgent Care 5 al año ($75 copago). Laboratorio y diagnósticos no incluidos.',
-      'Beneficios Hospitalarios: Hospitalización $1,500/día (máximo hospitalario $15,000 al año). Cirugía hospitalaria o ambulatoria $1,500 (máximo $4,500 al año). Emergencia $1,000 y Ambulancia $500.',
-      'Farmacia (hasta 30 días): Genérico preventivo $0, Genérico preferido $5 y Marca (con autorización previa) $40.',
-      AHW_PREVENTIVE_BULLET
-    ]
-  },
-  ahw6: {
-    level: 'ahw6',
-    shortLabel: 'AHW 6',
-    title: 'Plan de Salud AHW 6 Ambulatorio (Red First Health)',
-    tierLabel: 'AHW 6 Ambulatorio • Red First Health PPO ($0 Deducible)',
-    rates: { empleado: 199.99, pareja: 279.99, hijos: 279.99, familiar: 399.99 },
-    moopLabel: 'Plan Ambulatorio (sin beneficio hospitalario)',
-    pcpLabel: 'Copago $35 + Preventivo $0',
-    specialistLabel: '$75 Especialista / $85 Urgent Care',
-    rxLabel: '$0 Prev. / $5 Preferido (30 días)',
-    urgenciesLabel: '$85 Urgent Care (ER/Amb. no incl.)',
-    bullets: [
-      'Atención Ambulatoria y Estudios: Visita Primaria copago $35, Especialista $75, Urgent Care $85. Laboratorio $50 y MRI $500.',
-      'Beneficios Hospitalarios: Hospitalización, cirugía y emergencia/ambulancia no incluidos en este nivel ambulatorio.',
-      'Farmacia (hasta 30 días): Genérico preventivo $0 y Genérico preferido $5 (Marca no cubierta).',
-      AHW_PREVENTIVE_BULLET
-    ]
-  }
-};
-
-export const AHW4_OFFICIAL_BULLETS = AHW_SPECS.ahw4.bullets;
-
-// ============================================================
-// 4. MEDACCESS MVP (BASIC & PRO • RED FIRST HEALTH • POR EDAD)
-// ============================================================
-
-export interface MedAccessSpec {
-  level: MedAccessLevel;
-  title: string;
-  shortLabel: string;
-  tierLabel: string;
-  moopLabel: string;
-  rates: Record<MedAccessAgeBracket, Record<EnrollFamilyTier, number>>;
-  pcpLabel: string;
-  specialistLabel: string;
-  rxLabel: string;
-  urgenciesLabel: string;
-  bullets: string[];
-}
-
-export const MEDACCESS_SPECS: Record<MedAccessLevel, MedAccessSpec> = {
-  basic: {
-    level: 'basic',
-    title: 'MedAccess MVP Basic (Red First Health)',
-    shortLabel: 'MVP Basic',
-    tierLabel: 'MVP Basic • Red First Health PPO ($0 Deducible)',
-    moopLabel: '$7,350 Individual ($0 Deducible)',
-    rates: {
-      '18-45': { empleado: 432.84, pareja: 776.12, hijos: 670.15, familiar: 997.01 },
-      '46-64': { empleado: 550.0, pareja: 878.57, hijos: 777.14, familiar: 1090.0 }
-    },
-    pcpLabel: '6 consultas ($25 copago)',
-    specialistLabel: '$50 copago (6 al año, no hosp.)',
-    rxLabel: 'Genérica no prev. $10 copago',
-    urgenciesLabel: 'UC $50 (2/año) / Amb. $250 (1/año)',
-    bullets: [
-      'Consultas y Ambulatorio ($0 Deducible): Visitas primarias 6 consultas con $25 copago. Especialista (no hospitalario) $50 copago (6 al año). Urgent Care $50 (2/año) y Ambulancia $250 (1/año). Incluye Telemedicina RelyMD $0 y Bill Negotiator.',
-      'Estudios, Terapias y Farmacia: Laboratorio / Rayos X $50 copago (3 al año). CT / MRI / PET Scan $350 copago (1 al año). Rehabilitación física/terapias $50 copago (6 al año). Home Health Care $25 copago (5 al año). Farmacia genérica no preventiva $10 copago.',
-      'Hospitalización, Cirugía y Maternidad: Hospitalización hasta 3 días cubiertos por año ($350 copago). Cirugía ambulatoria: 1 procedimiento por año ($350). Maternidad: No cubierta en MVP Basic. Nota: El Out-of-Pocket ($7,350 Ind.) no elimina los topes de días.'
-    ]
-  },
-  pro: {
-    level: 'pro',
-    title: 'MedAccess MVP Pro (Red First Health)',
-    shortLabel: 'MVP Pro',
-    tierLabel: 'MVP Pro • Red First Health PPO ($0 Deducible)',
-    moopLabel: '$5,000 Individual ($0 Deducible)',
-    rates: {
-      '18-45': { empleado: 567.16, pareja: 1097.01, hijos: 886.57, familiar: 1455.22 },
-      '46-64': { empleado: 714.29, pareja: 1221.43, hijos: 1020.0, familiar: 1564.29 }
-    },
-    pcpLabel: '12 consultas ($15 copago)',
-    specialistLabel: '$25 copago (12 al año, no hosp.)',
-    rxLabel: 'Genérica no prev. 20% copago',
-    urgenciesLabel: 'UC $35 (3/año) / Amb. $250 (2/año)',
-    bullets: [
-      'Consultas y Ambulatorio ($0 Deducible): Visitas primarias 12 consultas con $15 copago. Especialista (no hospitalario) $25 copago (12 al año). Urgent Care $35 (3/año) y Ambulancia $250 (2/año). Incluye Telemedicina RelyMD $0 y Bill Negotiator.',
-      'Estudios, Terapias y Farmacia: Laboratorio / Rayos X $50 copago (4 al año). CT / MRI / PET Scan $350 copago (3 al año). Rehabilitación física/terapias $50 copago (12 al año). Home Health Care $25 copago (20 al año). Farmacia genérica no preventiva 20% copago.',
-      'Hospitalización, Cirugía y Maternidad: Hospitalización hasta 10 días cubiertos por año ($350 copago). Cirugías ambulatorias: 2 procedimientos por año ($350). Maternidad: Cubierta ($350 tras espera de 12 meses). Máximo de Bolsillo: $5,000 Individual.'
-    ]
-  }
-};
-
-// ============================================================
-// 5. BMI-PHCS (BASIC / VALUE / ADVANTAGE • RED PHCS)
+// BMI-PHCS (BASIC / VALUE / ADVANTAGE • RED PHCS)
 // ============================================================
 
 export interface BmiPhcsSpec {
@@ -1201,16 +996,6 @@ export const detectPresidioLevelFromText = (text: string): PresidioLevel => {
   return 'secure5000';
 };
 
-export const detectAhwLevelFromText = (text: string): AhwPlanLevel => {
-  const lower = String(text || '').toLowerCase();
-  if (lower.includes('ahw 1') || lower.includes('ahw1') || lower.includes('básico') || lower.includes('basico')) return 'ahw1';
-  if (lower.includes('ahw 2') || lower.includes('ahw2') || lower.includes('plus')) return 'ahw2';
-  if (lower.includes('ahw 3') || lower.includes('ahw3') || lower.includes('balance')) return 'ahw3';
-  if (lower.includes('ahw 5') || lower.includes('ahw5') || lower.includes('premium')) return 'ahw5';
-  if (lower.includes('ahw 6') || lower.includes('ahw6') || lower.includes('ambulatorio')) return 'ahw6';
-  return 'ahw4';
-};
-
 export const isMedMaxPlan = (plan: QuotePlan): boolean => {
   if (plan.planCategory === 'medmax') return true;
   const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
@@ -1241,20 +1026,6 @@ export const isHpgPlan = (plan: QuotePlan): boolean => {
   if (isGuardPlan(plan)) return false;
   const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
   return text.includes('protectorguard') || /\bhpg\b/.test(text);
-};
-
-export const isAhwPlan = (plan: QuotePlan): boolean => {
-  if (plan.planCategory === 'ahw4') return true;
-  const text = `${plan.company} ${plan.planName}`.toLowerCase();
-  return /\bahw\s*[1-6]\b/.test(text) || /\bahw[1-6]\b/.test(text);
-};
-
-export const isAhw4Plan = isAhwPlan;
-
-export const isMedAccessPlan = (plan: QuotePlan): boolean => {
-  if (plan.planCategory === 'medaccess') return true;
-  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
-  return text.includes('medaccess') || text.includes('mvp basic') || text.includes('mvp pro');
 };
 
 export const isBmiPhcsPlan = (plan: QuotePlan): boolean => {
@@ -1339,15 +1110,6 @@ export const getExactOfficialBulletsForPlan = (plan: QuotePlan): string[] => {
   }
   if (isMedMaxPlan(plan)) {
     return MEDMAX_OFFICIAL_BULLETS;
-  }
-  if (isAhwPlan(plan)) {
-    const level = plan.ahwLevel || detectAhwLevelFromText(`${plan.planName} ${plan.tier}`);
-    return AHW_SPECS[level].bullets;
-  }
-  if (isMedAccessPlan(plan)) {
-    const lower = `${plan.planName} ${plan.tier}`.toLowerCase();
-    const level: MedAccessLevel = plan.medaccessLevel || (lower.includes('pro') ? 'pro' : 'basic');
-    return MEDACCESS_SPECS[level].bullets;
   }
   if (isBmiPhcsPlan(plan)) {
     const lower = `${plan.planName} ${plan.tier}`.toLowerCase();
@@ -1542,57 +1304,6 @@ export const enforceOfficialCatalogOnPlan = (
       urgencies: spec.urgenciesLabel,
       highlights: spec.bullets,
       extraBenefit: 'Red UnitedHealthcare Choice Plus (~58% ahorro promedio) + Telemedicina $0 (Healthiest You) + Optum Perks.',
-      hasSanitasFee: false
-    };
-  }
-
-  if (isAhwPlan(plan)) {
-    const level = plan.ahwLevel || detectAhwLevelFromText(`${plan.planName} ${plan.tier}`);
-    const spec = AHW_SPECS[level];
-    return {
-      ...plan,
-      planCategory: 'ahw4',
-      ahwLevel: level,
-      company: `${spec.shortLabel} (Red First Health)`,
-      planName: spec.title,
-      tier: spec.tierLabel,
-      subtitleTag: `RED FIRST HEALTH PPO • RELYMD $0 • ${spec.shortLabel.toUpperCase()}`,
-      premium: parseMoney(plan.premium) > 0 ? plan.premium : spec.rates[famTier].toFixed(2),
-      deductible: '$0',
-      moop: spec.moopLabel,
-      primaryCare: spec.pcpLabel,
-      specialist: spec.specialistLabel,
-      genericRx: spec.rxLabel,
-      urgencies: spec.urgenciesLabel,
-      highlights: spec.bullets,
-      extraBenefit: 'Incluye Red First Health, Telemedicina RelyMD $0 y Bill Negotiator.',
-      hasSanitasFee: false
-    };
-  }
-
-  if (isMedAccessPlan(plan)) {
-    const lower = `${plan.planName} ${plan.tier}`.toLowerCase();
-    const level: MedAccessLevel = plan.medaccessLevel || (lower.includes('pro') ? 'pro' : 'basic');
-    const ageBracket: MedAccessAgeBracket = plan.medaccessAgeBracket || detectMedAccessAgeBracket(context?.ages || '');
-    const spec = MEDACCESS_SPECS[level];
-    return {
-      ...plan,
-      planCategory: 'medaccess',
-      medaccessLevel: level,
-      medaccessAgeBracket: ageBracket,
-      company: 'MedAccess MVP (Red First Health)',
-      planName: spec.title,
-      tier: `${spec.shortLabel} • Edad ${ageBracket} años`,
-      subtitleTag: `MEDACCESS ${spec.shortLabel.toUpperCase()} • RED FIRST HEALTH • $0 DEDUCIBLE`,
-      premium: parseMoney(plan.premium) > 0 ? plan.premium : spec.rates[ageBracket][famTier].toFixed(2),
-      deductible: '$0 (Sin deducible)',
-      moop: spec.moopLabel,
-      primaryCare: spec.pcpLabel,
-      specialist: spec.specialistLabel,
-      genericRx: spec.rxLabel,
-      urgencies: spec.urgenciesLabel,
-      highlights: spec.bullets,
-      extraBenefit: 'Red First Health PPO + Telemedicina RelyMD $0 + Bill Negotiator.',
       hasSanitasFee: false
     };
   }
@@ -1871,21 +1582,20 @@ export const evaluateGeoAndAgeEligibility = (
   const hpgNote = hpgRestrictedState
     ? `Variación estatal (${stateCode}): Verificar reglas locales de HPG.${hwDetail}${guardDetail}${!presidioAvailable ? ` Presidio Fortress: SOLO disponible en TX.` : ''}`
     : stateCode
-      ? `Estado ${stateCode}: HPG, Guard${guardAvailable ? ' (disponible)' : ' (no disponible)'}, HospitalWise${hwAvailable ? ' (disponible)' : ' (no disponible)'}, Affordable Choice, Presidio${presidioAvailable ? ' (disponible TX)' : ' (SOLO en TX)'}, MedMax, AHW 1-6, MedAccess MVP, BMI-PHCS, AFI y ACUSA.${hwDetail}${guardDetail}`
+      ? `Estado ${stateCode}: HPG, Guard${guardAvailable ? ' (disponible)' : ' (no disponible)'}, HospitalWise${hwAvailable ? ' (disponible)' : ' (no disponible)'}, Affordable Choice, Presidio${presidioAvailable ? ' (disponible TX)' : ' (SOLO en TX)'}, MedMax, BMI-PHCS, AFI y ACUSA.${hwDetail}${guardDetail}`
       : 'Ingresa un Estado o ZIP Code de 5 dígitos para validar disponibilidad regional.';
 
   let ageNote = '';
   if (hasSenior65Plus) {
     ageNote =
-      'Edad 65+ detectada: HPG, MedMax (18-64), MedAccess (18-64) y planes ACA aplican normalmente hasta los 64 años (evaluar Medicare para 65+).';
+      'Edad 65+ detectada: HPG, MedMax (18-64) y planes ACA aplican normalmente hasta los 64 años (evaluar Medicare para 65+).';
   } else if (ages.length > 0) {
     const adults = ages.filter(a => a >= 18).length;
     const kids = ages.filter(a => a < 18).length;
     const medmaxRange = detectMedMaxAgeBracket(agesStr);
-    const medaccessRange = detectMedAccessAgeBracket(agesStr);
-    ageNote = `Edades validadas (${ages.join(', ')} años): ${adults} adulto(s) y ${kids} menor(es) • Rango MedMax: ${medmaxRange} | MedAccess: ${medaccessRange}.`;
+    ageNote = `Edades validadas (${ages.join(', ')} años): ${adults} adulto(s) y ${kids} menor(es) • Rango MedMax: ${medmaxRange}.`;
   } else {
-    ageNote = 'Agrega las edades de los solicitantes para calcular tarifas por edad en MedMax y MedAccess MVP.';
+    ageNote = 'Agrega las edades de los solicitantes para calcular tarifas por edad en MedMax y Affordable Choice.';
   }
 
   return {
