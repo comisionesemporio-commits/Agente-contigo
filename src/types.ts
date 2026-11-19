@@ -131,6 +131,8 @@ export type QuotePlanCategory =
   | 'bmi_phcs'
   | 'afi'
   | 'acusa'
+  | 'premier_mm'
+  | 'premier_max'
   | 'aca'
   | 'custom';
 
@@ -146,6 +148,8 @@ export type EnrollFamilyTier = 'empleado' | 'pareja' | 'hijos' | 'familiar';
 export type BmiPhcsLevel = 'classic' | 'choice' | 'basic' | 'value' | 'advantage';
 export type AfiLevel = 'hsa3500' | 'copay3500';
 export type AcusaLevel = 'bronze2' | 'silver2';
+export type PremierMmLevel = 'mm2500' | 'mm5000' | 'mm7500';
+export type PremierMaxLevel = 'max1000' | 'max2000' | 'max3000';
 
 export interface QuotePlan {
   id: string;
@@ -178,6 +182,8 @@ export interface QuotePlan {
   bmiLevel?: BmiPhcsLevel;
   afiLevel?: AfiLevel;
   acusaLevel?: AcusaLevel;
+  premierMmLevel?: PremierMmLevel;
+  premierMaxLevel?: PremierMaxLevel;
   subtitleTag?: string;
   enrollmentFee?: string;
   enrollmentFeeLabel?: string;

@@ -11,6 +11,8 @@ import {
   MedMaxAgeBracket,
   MedMaxDeductibleTier,
   MedMaxScope,
+  PremierMaxLevel,
+  PremierMmLevel,
   PresidioLevel,
   QuotePlan,
   QuotePlanCategory,
@@ -42,6 +44,8 @@ import {
   MEDMAX_DEDUCTIBLE_OPTIONS,
   MEDMAX_DEFAULT_WARNING,
   MEDMAX_OFFICIAL_BULLETS,
+  PREMIER_MAX_SPECS,
+  PREMIER_MM_SPECS,
   PRESIDIO_SPECS,
   SANITAS_OFFICIAL_BULLETS,
   detectAffordableChoiceGroupKey,
@@ -53,6 +57,8 @@ import {
   detectHospitalWiseLevelFromText,
   detectHpgLevelFromText,
   detectMedMaxAgeBracket,
+  detectPremierMaxLevelFromText,
+  detectPremierMmLevelFromText,
   detectPresidioLevelFromText,
   enforceOfficialCatalogOnPlan,
   evaluateGeoAndAgeEligibility,
@@ -73,6 +79,8 @@ import {
   isHpgPlan,
   isHospitalWisePlan,
   isMedMaxPlan,
+  isPremierMaxPlan,
+  isPremierMmPlan,
   isPresidioPlan,
   isSanitasPlan,
   parseMoney,
@@ -611,6 +619,76 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
     onShowToast(`${spec.title} Agregado`, `Tarifa oficial $${rate}/mes (+$75 Application Fee único).`, 'success');
+  };
+
+  const addPremierMmPlan = (level: PremierMmLevel = 'mm5000') => {
+    const newId = 'plan_pmm_' + Date.now();
+    const spec = PREMIER_MM_SPECS[level];
+    const ageBracket = detectMedMaxAgeBracket(clientAges);
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[ageBracket][famTier].toFixed(2);
+    const created: QuotePlan = {
+      id: newId,
+      tag: `PREMIER MAJOR MEDICAL ${spec.shortLabel}`,
+      planCategory: 'premier_mm',
+      premierMmLevel: level,
+      medmaxAgeBracket: ageBracket,
+      medmaxFamilyTier: famTier,
+      company: 'Premier Major Medical (Cigna PPO)',
+      planName: spec.title,
+      tier: `${spec.tierLabel} • Edad ${ageBracket} años`,
+      subtitleTag: `CIGNA PPO • PREMIER MAJOR MEDICAL ${spec.shortLabel} • COASEGURO 20%`,
+      premium: rate,
+      hasEnrollmentFee: false,
+      deductible: spec.inDeductibleLabel,
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Red Cigna PPO (tarifas ACH; cargos adicionales pueden aplicar con tarjeta o fee de solicitud).',
+      clientSummary: `${spec.title} (${ageBracket} años): $${rate}/mes ACH • Deducible ${spec.inDeductibleLabel} • 20% Coaseguro.`,
+      isRecommended: false
+    };
+    setPlans(prev => [...prev, created]);
+    setLastAddedPlanId(newId);
+    onShowToast(`${spec.title} Agregado`, `Tarifa ACH oficial $${rate}/mes (Edad ${ageBracket}).`, 'success');
+  };
+
+  const addPremierMaxPlan = (level: PremierMaxLevel = 'max2000') => {
+    const newId = 'plan_pmax_' + Date.now();
+    const spec = PREMIER_MAX_SPECS[level];
+    const ageBracket = detectMedMaxAgeBracket(clientAges);
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[ageBracket][famTier].toFixed(2);
+    const created: QuotePlan = {
+      id: newId,
+      tag: `PREMIER MAX ${spec.shortLabel}`,
+      planCategory: 'premier_max',
+      premierMaxLevel: level,
+      medmaxAgeBracket: ageBracket,
+      medmaxFamilyTier: famTier,
+      company: 'Premier Max (PHCS / First Health PPO)',
+      planName: spec.title,
+      tier: `${spec.tierLabel} • Edad ${ageBracket} años`,
+      subtitleTag: `PHCS / FIRST HEALTH PPO • PREMIER MAX ${spec.shortLabel} • LÍMITES DE VISITAS`,
+      premium: rate,
+      hasEnrollmentFee: false,
+      deductible: spec.inDeductibleLabel,
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit: 'Red PHCS o First Health PPO (tarifas ACH; plan con límites de visitas anuales).',
+      clientSummary: `${spec.title} (${ageBracket} años): $${rate}/mes ACH • Deducible ${spec.inDeductibleLabel}.`,
+      isRecommended: false
+    };
+    setPlans(prev => [...prev, created]);
+    setLastAddedPlanId(newId);
+    onShowToast(`${spec.title} Agregado`, `Tarifa ACH oficial $${rate}/mes (Edad ${ageBracket}).`, 'success');
   };
 
   const addSanitasCarePlan = () => {
@@ -1181,6 +1259,78 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     );
   };
 
+  // Actualizar Premier Major Medical (2500 / 5000 / 7500, rango de edad y grupo familiar)
+  const updatePremierMmConfig = (
+    id: string,
+    updates: Partial<{ level: PremierMmLevel; ageBracket: MedMaxAgeBracket; familyTier: EnrollFamilyTier }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel = updates.level || p.premierMmLevel || 'mm5000';
+        const nextAge = updates.ageBracket || p.medmaxAgeBracket || detectMedMaxAgeBracket(clientAges);
+        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = PREMIER_MM_SPECS[nextLevel];
+        return {
+          ...p,
+          planCategory: 'premier_mm',
+          premierMmLevel: nextLevel,
+          medmaxAgeBracket: nextAge,
+          medmaxFamilyTier: nextFam,
+          company: 'Premier Major Medical (Cigna PPO)',
+          planName: spec.title,
+          tier: `${spec.tierLabel} • Edad ${nextAge} años`,
+          subtitleTag: `CIGNA PPO • PREMIER MAJOR MEDICAL ${spec.shortLabel} • COASEGURO 20%`,
+          premium: spec.rates[nextAge][nextFam].toFixed(2),
+          deductible: spec.inDeductibleLabel,
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          genericRx: spec.rxLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets,
+          extraBenefit: 'Red Cigna PPO (tarifas ACH; cargos adicionales pueden aplicar con tarjeta o fee de solicitud).'
+        };
+      })
+    );
+  };
+
+  // Actualizar Premier Max (1000 / 2000 / 3000, rango de edad y grupo familiar)
+  const updatePremierMaxConfig = (
+    id: string,
+    updates: Partial<{ level: PremierMaxLevel; ageBracket: MedMaxAgeBracket; familyTier: EnrollFamilyTier }>
+  ) => {
+    setPlans(prev =>
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel = updates.level || p.premierMaxLevel || 'max2000';
+        const nextAge = updates.ageBracket || p.medmaxAgeBracket || detectMedMaxAgeBracket(clientAges);
+        const nextFam = updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = PREMIER_MAX_SPECS[nextLevel];
+        return {
+          ...p,
+          planCategory: 'premier_max',
+          premierMaxLevel: nextLevel,
+          medmaxAgeBracket: nextAge,
+          medmaxFamilyTier: nextFam,
+          company: 'Premier Max (PHCS / First Health PPO)',
+          planName: spec.title,
+          tier: `${spec.tierLabel} • Edad ${nextAge} años`,
+          subtitleTag: `PHCS / FIRST HEALTH PPO • PREMIER MAX ${spec.shortLabel} • LÍMITES DE VISITAS`,
+          premium: spec.rates[nextAge][nextFam].toFixed(2),
+          deductible: spec.inDeductibleLabel,
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          genericRx: spec.rxLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets,
+          extraBenefit: 'Red PHCS o First Health PPO (tarifas ACH; plan con límites de visitas anuales).'
+        };
+      })
+    );
+  };
+
   const updatePlan = (id: string, field: keyof QuotePlan, value: any) => {
     setPlans(prev =>
       prev.map(p => {
@@ -1254,6 +1404,16 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
           } else if (value === 'acusa') {
             next = enforceOfficialCatalogOnPlan(
               { ...next, planCategory: 'acusa', acusaLevel: next.acusaLevel || 'silver2', premium: '' },
+              ctx
+            );
+          } else if (value === 'premier_mm') {
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'premier_mm', premierMmLevel: next.premierMmLevel || 'mm5000', premium: '' },
+              ctx
+            );
+          } else if (value === 'premier_max') {
+            next = enforceOfficialCatalogOnPlan(
+              { ...next, planCategory: 'premier_max', premierMaxLevel: next.premierMaxLevel || 'max2000', premium: '' },
               ctx
             );
           } else if (value === 'sanitas') {
@@ -1525,7 +1685,7 @@ Contexto del cliente:
 - Edad(es) de los solicitantes: ${clientAges || 'No especificadas'}
 
 Instrucciones estrictas:
-1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, Guard 4000/5000/6000, ManhattanLife Affordable Choice Classic/Classic Plus/Elite/Elite Plus, Presidio Fortress Elite 2.5K/Secure 5K/Value 7.5K/Essential 10K solo TX, MedMax, BMI-PHCS Classic/Choice/Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, "guardLevel" ("guard4000", "guard5000" o "guard6000") si es Guard Plans, "affordableChoiceLevel" ("classic", "classic_plus", "elite" o "elite_plus") si es Affordable Choice, "presidioLevel" ("elite2500", "secure5000", "value7500" o "essential10000") si es Presidio Fortress, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
+1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, Guard 4000/5000/6000, ManhattanLife Affordable Choice Classic/Classic Plus/Elite/Elite Plus, Presidio Fortress Elite 2.5K/Secure 5K/Value 7.5K/Essential 10K solo TX, MedMax, BMI-PHCS Classic/Choice/Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2, Premier Major Medical 2500/5000/7500, Premier Max 1000/2000/3000 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, "guardLevel" ("guard4000", "guard5000" o "guard6000") si es Guard Plans, "affordableChoiceLevel" ("classic", "classic_plus", "elite" o "elite_plus") si es Affordable Choice, "presidioLevel" ("elite2500", "secure5000", "value7500" o "essential10000") si es Presidio Fortress, "premierMmLevel" ("mm2500", "mm5000" o "mm7500") si es Premier Major Medical, "premierMaxLevel" ("max1000", "max2000" o "max3000") si es Premier Max, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
 2. Si es un plan ACA (Obamacare), extrae EXACTAMENTE de la captura/PDF: Aseguradora, Nombre exacto del plan, Nivel (Bronce/Plata/Oro), ID del plan ("planIdCode"), Prima con crédito fiscal ("premium"), Ahorro mensual o crédito fiscal ("subsidyAmount"), Deducible anual ("deductible"), Máximo de bolsillo ("moop"), Requisito de referido ("referralRequired"), y desglosa las 4 áreas médicas exactas ("primaryCare", "specialist", "acaLabsImaging", "acaErHospital", "acaRxTiers").
 
 Responde ÚNICAMENTE un array JSON válido con esta estructura:
@@ -1534,11 +1694,13 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
     "company": "Aseguradora",
     "planName": "Nombre exacto del plan",
     "tier": "Nivel (Bronce / Plata / Oro / etc.)",
-    "planCategory": "Una de: medmax | hpg4000 | guard | affordable_choice | presidio | bmi_phcs | afi | acusa | sanitas | hospitalwise | aca | custom",
+    "planCategory": "Una de: medmax | hpg4000 | guard | affordable_choice | presidio | bmi_phcs | afi | acusa | premier_mm | premier_max | sanitas | hospitalwise | aca | custom",
     "hpgLevel": "Solo si es HPG: select2000 | preferred4000 | premier5000",
     "guardLevel": "Solo si es Guard Plans: guard4000 | guard5000 | guard6000",
     "affordableChoiceLevel": "Solo si es Affordable Choice: classic | classic_plus | elite | elite_plus",
     "presidioLevel": "Solo si es Presidio Fortress: elite2500 | secure5000 | value7500 | essential10000",
+    "premierMmLevel": "Solo si es Premier Major Medical: mm2500 | mm5000 | mm7500",
+    "premierMaxLevel": "Solo si es Premier Max: max1000 | max2000 | max3000",
     "hospitalwiseLevel": "Solo si es HospitalWise: basic | bundle1 | bundle2",
     "planIdCode": "ID del plan ACA si aparece (ej: 21525FL0020035), si no ''",
     "premium": "Prima mensual en dólares (solo número con decimales, ej: '45.20')",
@@ -1584,7 +1746,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
       const parsedPlans = JSON.parse(cleanJson);
 
       if (Array.isArray(parsedPlans) && parsedPlans.length > 0) {
-        const validCategories = ['medmax', 'hpg4000', 'guard', 'affordable_choice', 'presidio', 'bmi_phcs', 'afi', 'acusa', 'sanitas', 'hospitalwise', 'aca', 'custom'];
+        const validCategories = ['medmax', 'hpg4000', 'guard', 'affordable_choice', 'presidio', 'bmi_phcs', 'afi', 'acusa', 'premier_mm', 'premier_max', 'sanitas', 'hospitalwise', 'aca', 'custom'];
         const mapped: QuotePlan[] = parsedPlans.map((p, idx) => {
           const combinedName = `${p.company || ''} ${p.planName || ''} ${p.tier || ''}`.toLowerCase();
           const isExplicitGuard =
@@ -1601,6 +1763,10 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                     ? 'afi'
                     : combinedName.includes('acusa') || combinedName.includes('vault') || combinedName.includes('bronze 2') || combinedName.includes('silver 2')
                       ? 'acusa'
+                      : combinedName.includes('premier max') || /\bmax\s*(1000|2000|3000)\b/.test(combinedName)
+                        ? 'premier_max'
+                        : combinedName.includes('premier major medical') || /\bpremier\s*mm\b/.test(combinedName)
+                          ? 'premier_mm'
                       : combinedName.includes('affordable choice') || combinedName.includes('manhattanlife') || combinedName.includes('manhattan life')
                         ? 'affordable_choice'
                         : combinedName.includes('presidio') || combinedName.includes('fortress')
@@ -1645,6 +1811,20 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 : detectPresidioLevelFromText(combinedName)
               : undefined;
 
+          const premierMmLevelDetected: PremierMmLevel | undefined =
+            detectedCategory === 'premier_mm'
+              ? p.premierMmLevel && ['mm2500', 'mm5000', 'mm7500'].includes(p.premierMmLevel)
+                ? p.premierMmLevel
+                : detectPremierMmLevelFromText(combinedName)
+              : undefined;
+
+          const premierMaxLevelDetected: PremierMaxLevel | undefined =
+            detectedCategory === 'premier_max'
+              ? p.premierMaxLevel && ['max1000', 'max2000', 'max3000'].includes(p.premierMaxLevel)
+                ? p.premierMaxLevel
+                : detectPremierMaxLevelFromText(combinedName)
+              : undefined;
+
           const hospitalwiseLevelDetected: HospitalWiseLevel | undefined =
             detectedCategory === 'hospitalwise'
               ? p.hospitalwiseLevel && ['basic', 'bundle1', 'bundle2'].includes(p.hospitalwiseLevel)
@@ -1663,6 +1843,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             guardLevel: guardLevelDetected,
             affordableChoiceLevel: affordableChoiceLevelDetected,
             presidioLevel: presidioLevelDetected,
+            premierMmLevel: premierMmLevelDetected,
+            premierMaxLevel: premierMaxLevelDetected,
             hospitalwiseLevel: hospitalwiseLevelDetected,
             bmiLevel: bmiLevelDetected,
             company: p.company || 'Aseguradora',
@@ -3231,7 +3413,57 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
               </div>
 
-              {/* 10. + Plan ACA (Obamacare) - Barra unificada completa al cierre */}
+              {/* 10. + Premier Major Medical (Cigna PPO) */}
+              <div className="p-2.5 rounded-2xl border border-violet-300 bg-violet-50/70 text-violet-950 flex flex-col justify-between gap-1.5 shadow-xs h-full">
+                <button
+                  type="button"
+                  onClick={() => addPremierMmPlan('mm5000')}
+                  className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                >
+                  <span className="font-black text-xs">+ Premier Major Medical</span>
+                  <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                </button>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['mm2500', 'mm5000', 'mm7500'] as PremierMmLevel[]).map(lvl => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => addPremierMmPlan(lvl)}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-violet-700 hover:text-white border border-violet-200 text-[10px] font-black transition cursor-pointer text-center"
+                      title={`Agregar ${PREMIER_MM_SPECS[lvl].title} (Red Cigna PPO • 20% Coaseguro)`}
+                    >
+                      {PREMIER_MM_SPECS[lvl].shortLabel}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 11. + Premier Max (PHCS / First Health PPO) */}
+              <div className="p-2.5 rounded-2xl border border-rose-300 bg-rose-50/70 text-rose-950 flex flex-col justify-between gap-1.5 shadow-xs h-full">
+                <button
+                  type="button"
+                  onClick={() => addPremierMaxPlan('max2000')}
+                  className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
+                >
+                  <span className="font-black text-xs">+ Premier Max</span>
+                  <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                </button>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['max1000', 'max2000', 'max3000'] as PremierMaxLevel[]).map(lvl => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => addPremierMaxPlan(lvl)}
+                      className="py-1 px-1 rounded-lg bg-white hover:bg-rose-700 hover:text-white border border-rose-200 text-[10px] font-black transition cursor-pointer text-center"
+                      title={`Agregar ${PREMIER_MAX_SPECS[lvl].title} (PHCS / First Health PPO)`}
+                    >
+                      {PREMIER_MAX_SPECS[lvl].shortLabel}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 12. + Plan ACA (Obamacare) - Barra unificada completa al cierre */}
               <button
                 type="button"
                 onClick={addAcaPlan}
@@ -3316,6 +3548,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                   const isBmiPhcs = isBmiPhcsPlan(plan);
                   const isAfi = isAfiPlan(plan);
                   const isAcusa = isAcusaPlan(plan);
+                  const isPremierMm = isPremierMmPlan(plan);
+                  const isPremierMax = isPremierMaxPlan(plan);
                   const isSanitas = isSanitasPlan(plan) && !isHospitalWisePlan(plan);
                   const isHospitalWise = isHospitalWisePlan(plan);
                   const currentHpgLevel: HpgPlanLevel =
@@ -3356,6 +3590,10 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                     plan.afiLevel || (plan.planName.toLowerCase().includes('hsa') ? 'hsa3500' : 'copay3500');
                   const currentAcusaLevel: AcusaLevel =
                     plan.acusaLevel || (plan.planName.toLowerCase().includes('bronze') ? 'bronze2' : 'silver2');
+                  const currentPremierMmLevel: PremierMmLevel =
+                    plan.premierMmLevel || detectPremierMmLevelFromText(`${plan.planName} ${plan.tier}`);
+                  const currentPremierMaxLevel: PremierMaxLevel =
+                    plan.premierMaxLevel || detectPremierMaxLevelFromText(`${plan.planName} ${plan.tier}`);
 
                   return (
                     <div
@@ -3392,6 +3630,8 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                             <option value="bmi_phcs">BMI-PHCS (Red PHCS)</option>
                             <option value="afi">AFI Major Medical (3500)</option>
                             <option value="acusa">ACUSA Vault (Bronze/Silver)</option>
+                            <option value="premier_mm">Premier Major Medical (Cigna PPO)</option>
+                            <option value="premier_max">Premier Max (PHCS / First Health PPO)</option>
                             <option value="sanitas">Sanitas Care Plus</option>
                             <option value="hospitalwise">HospitalWise (Basic / Bundle 1 / 2)</option>
                             <option value="aca">Plan ACA (Obamacare)</option>
@@ -3892,6 +4132,142 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                                 {opt.label} (${ACUSA_SPECS[currentAcusaLevel].rates[opt.key].toFixed(2)})
                               </button>
                             ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Selector Premier Major Medical (2500 / 5000 / 7500 + Edad + Grupo Familiar) */}
+                      {isPremierMm && (
+                        <div className="bg-violet-50/70 p-2.5 rounded-xl border border-violet-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-violet-950">
+                              Premier Major Medical (Red Cigna PPO • 20% Coaseguro • Tarifas ACH):
+                            </span>
+                            <div className="flex gap-1.5">
+                              {(['mm2500', 'mm5000', 'mm7500'] as PremierMmLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updatePremierMmConfig(plan.id, { level: lvl })}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentPremierMmLevel === lvl
+                                      ? 'bg-violet-700 text-white border-violet-800'
+                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
+                                  }`}
+                                >
+                                  Deducible ${PREMIER_MM_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-[10px] font-bold text-violet-900 mr-1">Edad:</span>
+                              {(['18-29', '30-44', '45-54', '55-64'] as MedMaxAgeBracket[]).map(bracket => (
+                                <button
+                                  key={bracket}
+                                  type="button"
+                                  onClick={() => updatePremierMmConfig(plan.id, { ageBracket: bracket })}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-black border cursor-pointer ${
+                                    currentMedMaxAge === bracket
+                                      ? 'bg-violet-700 text-white border-violet-800'
+                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
+                                  }`}
+                                >
+                                  {bracket}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {[
+                                { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
+                                { key: 'pareja' as EnrollFamilyTier, label: 'Emp.+Cóny.' },
+                                { key: 'hijos' as EnrollFamilyTier, label: 'Emp.+Hijo(s)' },
+                                { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
+                              ].map(opt => (
+                                <button
+                                  key={opt.key}
+                                  type="button"
+                                  onClick={() => updatePremierMmConfig(plan.id, { familyTier: opt.key })}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                    currentMedMaxFam === opt.key
+                                      ? 'bg-slate-900 text-white border-slate-900'
+                                      : 'bg-white text-violet-900 border-violet-200 hover:bg-violet-100'
+                                  }`}
+                                >
+                                  {opt.label} (${PREMIER_MM_SPECS[currentPremierMmLevel].rates[currentMedMaxAge][opt.key].toFixed(2)})
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Selector Premier Max (1000 / 2000 / 3000 + Edad + Grupo Familiar) */}
+                      {isPremierMax && (
+                        <div className="bg-rose-50/70 p-2.5 rounded-xl border border-rose-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-rose-950">
+                              Premier Max (PHCS o First Health PPO • Límites de Visitas • Tarifas ACH):
+                            </span>
+                            <div className="flex gap-1.5">
+                              {(['max1000', 'max2000', 'max3000'] as PremierMaxLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updatePremierMaxConfig(plan.id, { level: lvl })}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentPremierMaxLevel === lvl
+                                      ? 'bg-rose-700 text-white border-rose-800'
+                                      : 'bg-white text-rose-900 border-rose-200 hover:bg-rose-100'
+                                  }`}
+                                >
+                                  Deducible ${PREMIER_MAX_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-[10px] font-bold text-rose-900 mr-1">Edad:</span>
+                              {(['18-29', '30-44', '45-54', '55-64'] as MedMaxAgeBracket[]).map(bracket => (
+                                <button
+                                  key={bracket}
+                                  type="button"
+                                  onClick={() => updatePremierMaxConfig(plan.id, { ageBracket: bracket })}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-black border cursor-pointer ${
+                                    currentMedMaxAge === bracket
+                                      ? 'bg-rose-700 text-white border-rose-800'
+                                      : 'bg-white text-rose-900 border-rose-200 hover:bg-rose-100'
+                                  }`}
+                                >
+                                  {bracket}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {[
+                                { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
+                                { key: 'pareja' as EnrollFamilyTier, label: 'Emp.+Cóny.' },
+                                { key: 'hijos' as EnrollFamilyTier, label: 'Emp.+Hijo(s)' },
+                                { key: 'familiar' as EnrollFamilyTier, label: 'Familiar' }
+                              ].map(opt => (
+                                <button
+                                  key={opt.key}
+                                  type="button"
+                                  onClick={() => updatePremierMaxConfig(plan.id, { familyTier: opt.key })}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                    currentMedMaxFam === opt.key
+                                      ? 'bg-slate-900 text-white border-slate-900'
+                                      : 'bg-white text-rose-900 border-rose-200 hover:bg-rose-100'
+                                  }`}
+                                >
+                                  {opt.label} (${PREMIER_MAX_SPECS[currentPremierMaxLevel].rates[currentMedMaxAge][opt.key].toFixed(2)})
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )}
@@ -4600,7 +4976,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             </div>
 
             <p className="text-slate-600 leading-relaxed">
-              Para analizar capturas de cotizaciones y extraer automáticamente planes ACA, HPG, Guard, Affordable Choice, Presidio (TX), MedMax, BMI-PHCS, AFI, ACUSA, Sanitas o HospitalWise, conecta tu API Key de Gemini.
+              Para analizar capturas de cotizaciones y extraer automáticamente planes ACA, HPG, Guard, Affordable Choice, Presidio (TX), MedMax, BMI-PHCS, AFI, ACUSA, Premier Major Medical, Premier Max, Sanitas o HospitalWise, conecta tu API Key de Gemini.
             </p>
 
             <div className="space-y-1">

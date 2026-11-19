@@ -10,6 +10,8 @@ import {
   MedMaxAgeBracket,
   MedMaxDeductibleTier,
   MedMaxScope,
+  PremierMaxLevel,
+  PremierMmLevel,
   PresidioLevel,
   QuotePlan
 } from '../types';
@@ -897,6 +899,192 @@ export const ACUSA_SPECS: Record<AcusaLevel, AcusaSpec> = {
 };
 
 // ============================================================
+// 7B. PREMIER MAJOR MEDICAL (2500 / 5000 / 7500 • RED CIGNA PPO)
+// ============================================================
+
+export interface PremierMmSpec {
+  level: PremierMmLevel;
+  title: string;
+  shortLabel: string;
+  tierLabel: string;
+  inDeductibleLabel: string;
+  oonDeductibleLabel: string;
+  moopLabel: string;
+  pcpLabel: string;
+  specialistLabel: string;
+  rxLabel: string;
+  urgenciesLabel: string;
+  rates: Record<MedMaxAgeBracket, Record<EnrollFamilyTier, number>>;
+  bullets: string[];
+}
+
+export const PREMIER_MM_SPECS: Record<PremierMmLevel, PremierMmSpec> = {
+  mm2500: {
+    level: 'mm2500',
+    title: 'Premier Major Medical 2500',
+    shortLabel: '2500',
+    tierLabel: 'Major Medical (Red Cigna PPO) • Deducible $2,500/$5,000 • 20% Coaseguro',
+    inDeductibleLabel: '$2,500 Ind. / $5,000 Fam.',
+    oonDeductibleLabel: '$5,000 Ind. / $10,000 Fam.',
+    moopLabel: '$10,600 Ind. / $21,200 Fam. (OON $21,200/$42,400)',
+    pcpLabel: '$40 Copago (Preventivo $0)',
+    specialistLabel: '$75 Copago',
+    rxLabel: 'Prev Gen $0 / Mant $20 / Marca $65 / No-Pref $95 / Esp $200',
+    urgenciesLabel: 'UC $90 • ER $1,000 • Amb. Terrestre $250',
+    rates: {
+      '18-29': { empleado: 689.99, pareja: 1199.99, hijos: 1199.99, familiar: 1699.99 },
+      '30-44': { empleado: 699.99, pareja: 1274.99, hijos: 1199.99, familiar: 1749.99 },
+      '45-54': { empleado: 749.99, pareja: 1299.99, hijos: 1249.99, familiar: 1799.99 },
+      '55-64': { empleado: 849.99, pareja: 1499.99, hijos: 1374.99, familiar: 2099.99 }
+    },
+    bullets: [
+      'Red Cigna PPO y Estructura Major Medical (2500): Deducible Dentro de Red $2,500 Ind. / $5,000 Fam. (Fuera de Red $5,000/$10,000). Coaseguro tras deducible: 20% IN / 50% OON. Máximo de Bolsillo: $10,600 Ind. / $21,200 Fam. (OON $21,200/$42,400). Vigencia 01/01/2027 - 12/31/2027.',
+      'Consultas, Diagnóstico y Emergencias: Preventivo $0 (sin deducible). Médico Primario $40 / Especialista y Salud Mental amb. $75. Urgent Care $90 / Lab. independiente $25 / Rayos X centro ind. $50 / Imágenes avanzadas (CT/PET/MRI) $200 (preaut.). Emergencia ER $1,000 / Ambulancia terrestre $250.',
+      'Hospitalización, Cirugía, Maternidad y Farmacia: Hospitalización deducible + 20% coaseguro (médico asociado $250/serv.); Cirugía ambulatoria ASC $2,500 facilidad + $250 cirujano (preaut.). Maternidad: consultas $75 / parto facilidad $1,500 tras deducible + prof. ded. y coas. Rx (30d red): Prev. Genérico $0 / Mant. Genérico $20 / Marca Pref. $65 / No-Pref. $95 / Especialidad $200.'
+    ]
+  },
+  mm5000: {
+    level: 'mm5000',
+    title: 'Premier Major Medical 5000',
+    shortLabel: '5000',
+    tierLabel: 'Major Medical (Red Cigna PPO) • Deducible $5,000/$10,000 • 20% Coaseguro',
+    inDeductibleLabel: '$5,000 Ind. / $10,000 Fam.',
+    oonDeductibleLabel: '$10,000 Ind. / $20,000 Fam.',
+    moopLabel: '$10,600 Ind. / $21,200 Fam. (OON $21,200/$42,400)',
+    pcpLabel: '$40 Copago (Preventivo $0)',
+    specialistLabel: '$75 Copago',
+    rxLabel: 'Prev Gen $0 / Mant $20 / Marca $65 / No-Pref $95 / Esp $200',
+    urgenciesLabel: 'UC $90 • ER $1,000 • Amb. Terrestre $250',
+    rates: {
+      '18-29': { empleado: 599.99, pareja: 1099.99, hijos: 999.99, familiar: 1499.99 },
+      '30-44': { empleado: 624.99, pareja: 1124.99, hijos: 1024.99, familiar: 1549.99 },
+      '45-54': { empleado: 649.99, pareja: 1199.99, hijos: 1049.99, familiar: 1599.99 },
+      '55-64': { empleado: 699.99, pareja: 1249.99, hijos: 1149.99, familiar: 1699.99 }
+    },
+    bullets: [
+      'Red Cigna PPO y Estructura Major Medical (5000): Deducible Dentro de Red $5,000 Ind. / $10,000 Fam. (Fuera de Red $10,000/$20,000). Coaseguro tras deducible: 20% IN / 50% OON. Máximo de Bolsillo: $10,600 Ind. / $21,200 Fam. (OON $21,200/$42,400). Vigencia 01/01/2027 - 12/31/2027.',
+      'Consultas, Diagnóstico y Emergencias: Preventivo $0 (sin deducible). Médico Primario $40 / Especialista y Salud Mental amb. $75. Urgent Care $90 / Lab. independiente $25 / Rayos X centro ind. $50 / Imágenes avanzadas (CT/PET/MRI) $200 (preaut.). Emergencia ER $1,000 / Ambulancia terrestre $250.',
+      'Hospitalización, Cirugía, Maternidad y Farmacia: Hospitalización deducible + 20% coaseguro (médico asociado $250/serv.); Cirugía ambulatoria ASC $2,500 facilidad + $250 cirujano (preaut.). Maternidad: consultas $75 / parto facilidad $1,500 tras deducible + prof. ded. y coas. Rx (30d red): Prev. Genérico $0 / Mant. Genérico $20 / Marca Pref. $65 / No-Pref. $95 / Especialidad $200.'
+    ]
+  },
+  mm7500: {
+    level: 'mm7500',
+    title: 'Premier Major Medical 7500',
+    shortLabel: '7500',
+    tierLabel: 'Major Medical (Red Cigna PPO) • Deducible $7,500/$15,000 • 20% Coaseguro',
+    inDeductibleLabel: '$7,500 Ind. / $15,000 Fam.',
+    oonDeductibleLabel: '$15,000 Ind. / $30,000 Fam.',
+    moopLabel: '$10,600 Ind. / $21,200 Fam. (OON $21,200/$42,400)',
+    pcpLabel: '$40 Copago (Preventivo $0)',
+    specialistLabel: '$75 Copago',
+    rxLabel: 'Prev Gen $0 / Mant $20 / Marca $65 / No-Pref $95 / Esp $200',
+    urgenciesLabel: 'UC $90 • ER $1,000 • Amb. Terrestre $250',
+    rates: {
+      '18-29': { empleado: 499.99, pareja: 899.99, hijos: 829.99, familiar: 1199.99 },
+      '30-44': { empleado: 524.99, pareja: 949.99, hijos: 849.99, familiar: 1249.99 },
+      '45-54': { empleado: 549.99, pareja: 999.99, hijos: 899.99, familiar: 1299.99 },
+      '55-64': { empleado: 599.99, pareja: 1049.99, hijos: 949.99, familiar: 1399.99 }
+    },
+    bullets: [
+      'Red Cigna PPO y Estructura Major Medical (7500): Deducible Dentro de Red $7,500 Ind. / $15,000 Fam. (Fuera de Red $15,000/$30,000). Coaseguro tras deducible: 20% IN / 50% OON. Máximo de Bolsillo: $10,600 Ind. / $21,200 Fam. (OON $21,200/$42,400). Vigencia 01/01/2027 - 12/31/2027.',
+      'Consultas, Diagnóstico y Emergencias: Preventivo $0 (sin deducible). Médico Primario $40 / Especialista y Salud Mental amb. $75. Urgent Care $90 / Lab. independiente $25 / Rayos X centro ind. $50 / Imágenes avanzadas (CT/PET/MRI) $200 (preaut.). Emergencia ER $1,000 / Ambulancia terrestre $250.',
+      'Hospitalización, Cirugía, Maternidad y Farmacia: Hospitalización deducible + 20% coaseguro (médico asociado $250/serv.); Cirugía ambulatoria ASC $2,500 facilidad + $250 cirujano (preaut.). Maternidad: consultas $75 / parto facilidad $1,500 tras deducible + prof. ded. y coas. Rx (30d red): Prev. Genérico $0 / Mant. Genérico $20 / Marca Pref. $65 / No-Pref. $95 / Especialidad $200.'
+    ]
+  }
+};
+
+// ============================================================
+// 7C. PREMIER MAX (1000 / 2000 / 3000 • PHCS OR FIRST HEALTH PPO)
+// ============================================================
+
+export interface PremierMaxSpec {
+  level: PremierMaxLevel;
+  title: string;
+  shortLabel: string;
+  tierLabel: string;
+  inDeductibleLabel: string;
+  moopLabel: string;
+  pcpLabel: string;
+  specialistLabel: string;
+  rxLabel: string;
+  urgenciesLabel: string;
+  rates: Record<MedMaxAgeBracket, Record<EnrollFamilyTier, number>>;
+  bullets: string[];
+}
+
+export const PREMIER_MAX_SPECS: Record<PremierMaxLevel, PremierMaxSpec> = {
+  max1000: {
+    level: 'max1000',
+    title: 'Premier Max 1000',
+    shortLabel: '1000',
+    tierLabel: 'PHCS o First Health PPO • Deducible $1,000/$2,000 • Límites de Visitas',
+    inDeductibleLabel: '$1,000 Ind. / $2,000 Fam.',
+    moopLabel: '$10,600 Ind. / $21,200 Fam. (Ilimitado fuera de límites)',
+    pcpLabel: '$50 Copago (10 v/año comb. PCP/Esp./UC)',
+    specialistLabel: '$50 Copago (en límite comb. 10 v/año)',
+    rxLabel: 'Prev Gen $0 / Genérico $0 tras ded. (Marca/Esp. no cub.)',
+    urgenciesLabel: 'UC $50 • ER $1,000 tras ded. (4/año) • Amb. $500 tras ded.',
+    rates: {
+      '18-29': { empleado: 319.99, pareja: 579.99, hijos: 569.99, familiar: 839.99 },
+      '30-44': { empleado: 324.99, pareja: 639.99, hijos: 619.99, familiar: 899.99 },
+      '45-54': { empleado: 374.99, pareja: 709.99, hijos: 689.99, familiar: 969.99 },
+      '55-64': { empleado: 399.99, pareja: 759.99, hijos: 739.99, familiar: 999.99 }
+    },
+    bullets: [
+      'Red PHCS o First Health PPO (Premier Max 1000): Deducible IN $1,000 Ind. / $2,000 Fam. Máximo de Bolsillo IN: $10,600 Ind. / $21,200 Fam. (ilimitado fuera de límites de visitas; OON no cubierto salvo emergencia real). Vigencia 01/01/2027 - 12/31/2027.',
+      'Consultas, Diagnóstico y Emergencias: Preventivo $0 (sin ded.). Primario, Especialista y Urgent Care $50 (10 v/año comb.). Lab. ind. $25 (3/año) / Rayos X $50 tras ded. (3/año) / Imágenes CT-PET-MRI $200 tras ded. (3/año, preaut.). ER $1,000 tras ded. (2 acc. + 2 enf./año) / Ambulancia $500 tras ded. (2/año).',
+      'Hospital, Cirugía, Maternidad y Farmacia: Hospitalización $2,500/admisión tras ded. (3 UCI + 2 no-UCI, máx. 10d; médico asoc. $250/serv., cirugía int. $2,500, preaut.). Cirugía amb. ASC $2,500 tras ded. + $250 cirujano (2/año). Maternidad: visitas 100% tras ded., parto $2,500 tras ded. Rx (30d): Genérico prev. $0 / genérico $0 tras ded. (Marca/Esp. no cub., disp. Patient Assistance).'
+    ]
+  },
+  max2000: {
+    level: 'max2000',
+    title: 'Premier Max 2000',
+    shortLabel: '2000',
+    tierLabel: 'PHCS o First Health PPO • Deducible $2,000/$4,000 • Límites de Visitas',
+    inDeductibleLabel: '$2,000 Ind. / $4,000 Fam.',
+    moopLabel: '$10,600 Ind. / $21,200 Fam. (Ilimitado fuera de límites)',
+    pcpLabel: '$50 Copago (10 v/año comb. PCP/Esp./UC)',
+    specialistLabel: '$50 Copago (en límite comb. 10 v/año)',
+    rxLabel: 'Prev Gen $0 / Genérico $0 tras ded. (Marca/Esp. no cub.)',
+    urgenciesLabel: 'UC $50 • ER $1,000 tras ded. (4/año) • Amb. $500 tras ded.',
+    rates: {
+      '18-29': { empleado: 309.99, pareja: 559.99, hijos: 539.99, familiar: 819.99 },
+      '30-44': { empleado: 319.99, pareja: 619.99, hijos: 599.99, familiar: 879.99 },
+      '45-54': { empleado: 359.99, pareja: 689.99, hijos: 669.99, familiar: 949.99 },
+      '55-64': { empleado: 379.99, pareja: 739.99, hijos: 719.99, familiar: 979.99 }
+    },
+    bullets: [
+      'Red PHCS o First Health PPO (Premier Max 2000): Deducible IN $2,000 Ind. / $4,000 Fam. Máximo de Bolsillo IN: $10,600 Ind. / $21,200 Fam. (ilimitado fuera de límites de visitas; OON no cubierto salvo emergencia real). Vigencia 01/01/2027 - 12/31/2027.',
+      'Consultas, Diagnóstico y Emergencias: Preventivo $0 (sin ded.). Primario, Especialista y Urgent Care $50 (10 v/año comb.). Lab. ind. $25 (3/año) / Rayos X $50 tras ded. (3/año) / Imágenes CT-PET-MRI $200 tras ded. (3/año, preaut.). ER $1,000 tras ded. (2 acc. + 2 enf./año) / Ambulancia $500 tras ded. (2/año).',
+      'Hospital, Cirugía, Maternidad y Farmacia: Hospitalización $2,500/admisión tras ded. (3 UCI + 2 no-UCI, máx. 10d; médico asoc. $250/serv., cirugía int. $2,500, preaut.). Cirugía amb. ASC $2,500 tras ded. + $250 cirujano (2/año). Maternidad: visitas 100% tras ded., parto $2,500 tras ded. Rx (30d): Genérico prev. $0 / genérico $0 tras ded. (Marca/Esp. no cub., disp. Patient Assistance).'
+    ]
+  },
+  max3000: {
+    level: 'max3000',
+    title: 'Premier Max 3000',
+    shortLabel: '3000',
+    tierLabel: 'PHCS o First Health PPO • Deducible $3,000/$6,000 • Límites de Visitas',
+    inDeductibleLabel: '$3,000 Ind. / $6,000 Fam.',
+    moopLabel: '$10,600 Ind. / $21,200 Fam. (Ilimitado fuera de límites)',
+    pcpLabel: '$50 Copago (10 v/año comb. PCP/Esp./UC)',
+    specialistLabel: '$50 Copago (en límite comb. 10 v/año)',
+    rxLabel: 'Prev Gen $0 / Genérico $0 tras ded. (Marca/Esp. no cub.)',
+    urgenciesLabel: 'UC $50 • ER $1,000 tras ded. (4/año) • Amb. $500 tras ded.',
+    rates: {
+      '18-29': { empleado: 299.99, pareja: 539.99, hijos: 519.99, familiar: 799.99 },
+      '30-44': { empleado: 309.99, pareja: 599.99, hijos: 579.99, familiar: 859.99 },
+      '45-54': { empleado: 349.99, pareja: 669.99, hijos: 649.99, familiar: 929.99 },
+      '55-64': { empleado: 369.99, pareja: 719.99, hijos: 699.99, familiar: 959.99 }
+    },
+    bullets: [
+      'Red PHCS o First Health PPO (Premier Max 3000): Deducible IN $3,000 Ind. / $6,000 Fam. Máximo de Bolsillo IN: $10,600 Ind. / $21,200 Fam. (ilimitado fuera de límites de visitas; OON no cubierto salvo emergencia real). Vigencia 01/01/2027 - 12/31/2027.',
+      'Consultas, Diagnóstico y Emergencias: Preventivo $0 (sin ded.). Primario, Especialista y Urgent Care $50 (10 v/año comb.). Lab. ind. $25 (3/año) / Rayos X $50 tras ded. (3/año) / Imágenes CT-PET-MRI $200 tras ded. (3/año, preaut.). ER $1,000 tras ded. (2 acc. + 2 enf./año) / Ambulancia $500 tras ded. (2/año).',
+      'Hospital, Cirugía, Maternidad y Farmacia: Hospitalización $2,500/admisión tras ded. (3 UCI + 2 no-UCI, máx. 10d; médico asoc. $250/serv., cirugía int. $2,500, preaut.). Cirugía amb. ASC $2,500 tras ded. + $250 cirujano (2/año). Maternidad: visitas 100% tras ded., parto $2,500 tras ded. Rx (30d): Genérico prev. $0 / genérico $0 tras ded. (Marca/Esp. no cub., disp. Patient Assistance).'
+    ]
+  }
+};
+
+// ============================================================
 // 8. SANITAS CARE PLUS & HOSPITALWISE BUNDLE 1
 // ============================================================
 
@@ -1097,6 +1285,36 @@ export const isAcusaPlan = (plan: QuotePlan): boolean => {
   return text.includes('acusa') || text.includes('vault health') || text.includes('bronze 2') || text.includes('silver 2');
 };
 
+export const detectPremierMmLevelFromText = (text: string): PremierMmLevel => {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('7500') || lower.includes('7,500') || lower.includes('7.5k')) return 'mm7500';
+  if (lower.includes('2500') || lower.includes('2,500') || lower.includes('2.5k')) return 'mm2500';
+  return 'mm5000';
+};
+
+export const isPremierMmPlan = (plan: QuotePlan): boolean => {
+  if (plan.planCategory === 'premier_mm') return true;
+  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
+  return (
+    text.includes('premier major medical') ||
+    /\bpremier\s*mm\b/.test(text) ||
+    /premier.*(2500|5000|7500)/.test(text)
+  );
+};
+
+export const detectPremierMaxLevelFromText = (text: string): PremierMaxLevel => {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('3000') || lower.includes('3,000')) return 'max3000';
+  if (lower.includes('1000') || lower.includes('1,000')) return 'max1000';
+  return 'max2000';
+};
+
+export const isPremierMaxPlan = (plan: QuotePlan): boolean => {
+  if (plan.planCategory === 'premier_max') return true;
+  const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
+  return text.includes('premier max') || /\bmax\s*(1000|2000|3000)\b/.test(text);
+};
+
 export const isHospitalWisePlan = (plan: QuotePlan): boolean => {
   if (plan.planCategory === 'hospitalwise') return true;
   const text = `${plan.company} ${plan.planName}`.toLowerCase();
@@ -1175,6 +1393,14 @@ export const getExactOfficialBulletsForPlan = (plan: QuotePlan): string[] => {
     const lower = `${plan.planName} ${plan.tier}`.toLowerCase();
     const level: AcusaLevel = plan.acusaLevel || (lower.includes('silver') ? 'silver2' : 'bronze2');
     return ACUSA_SPECS[level].bullets;
+  }
+  if (isPremierMmPlan(plan)) {
+    const level = plan.premierMmLevel || detectPremierMmLevelFromText(`${plan.planName} ${plan.tier}`);
+    return PREMIER_MM_SPECS[level].bullets;
+  }
+  if (isPremierMaxPlan(plan)) {
+    const level = plan.premierMaxLevel || detectPremierMaxLevelFromText(`${plan.planName} ${plan.tier}`);
+    return PREMIER_MAX_SPECS[level].bullets;
   }
   if (isHospitalWisePlan(plan)) {
     const level =
@@ -1443,6 +1669,62 @@ export const enforceOfficialCatalogOnPlan = (
     };
   }
 
+  if (isPremierMmPlan(plan)) {
+    const level = plan.premierMmLevel || detectPremierMmLevelFromText(`${plan.planName} ${plan.tier}`);
+    const ageBracket = plan.medmaxAgeBracket || detectMedMaxAgeBracket(context?.ages || '');
+    const spec = PREMIER_MM_SPECS[level];
+    return {
+      ...plan,
+      planCategory: 'premier_mm',
+      premierMmLevel: level,
+      medmaxAgeBracket: ageBracket,
+      medmaxFamilyTier: famTier,
+      company: 'Premier Major Medical (Cigna PPO)',
+      planName: spec.title,
+      tier: `${spec.tierLabel} • Edad ${ageBracket} años`,
+      subtitleTag: `CIGNA PPO • PREMIER MAJOR MEDICAL ${spec.shortLabel} • COASEGURO 20%`,
+      premium: parseMoney(plan.premium) > 0 ? plan.premium : spec.rates[ageBracket][famTier].toFixed(2),
+      deductible: spec.inDeductibleLabel,
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit:
+        'Red Cigna PPO (tarifas ACH; cargos adicionales pueden aplicar con tarjeta o fee de solicitud).',
+      hasSanitasFee: false
+    };
+  }
+
+  if (isPremierMaxPlan(plan)) {
+    const level = plan.premierMaxLevel || detectPremierMaxLevelFromText(`${plan.planName} ${plan.tier}`);
+    const ageBracket = plan.medmaxAgeBracket || detectMedMaxAgeBracket(context?.ages || '');
+    const spec = PREMIER_MAX_SPECS[level];
+    return {
+      ...plan,
+      planCategory: 'premier_max',
+      premierMaxLevel: level,
+      medmaxAgeBracket: ageBracket,
+      medmaxFamilyTier: famTier,
+      company: 'Premier Max (PHCS / First Health PPO)',
+      planName: spec.title,
+      tier: `${spec.tierLabel} • Edad ${ageBracket} años`,
+      subtitleTag: `PHCS / FIRST HEALTH PPO • PREMIER MAX ${spec.shortLabel} • LÍMITES DE VISITAS`,
+      premium: parseMoney(plan.premium) > 0 ? plan.premium : spec.rates[ageBracket][famTier].toFixed(2),
+      deductible: spec.inDeductibleLabel,
+      moop: spec.moopLabel,
+      primaryCare: spec.pcpLabel,
+      specialist: spec.specialistLabel,
+      genericRx: spec.rxLabel,
+      urgencies: spec.urgenciesLabel,
+      highlights: spec.bullets,
+      extraBenefit:
+        'Red PHCS o First Health PPO (tarifas ACH; plan con límites de visitas anuales).',
+      hasSanitasFee: false
+    };
+  }
+
   if (isHospitalWisePlan(plan)) {
     const level =
       plan.hospitalwiseLevel || detectHospitalWiseLevelFromText(`${plan.planName} ${plan.tier}`);
@@ -1636,20 +1918,20 @@ export const evaluateGeoAndAgeEligibility = (
   const hpgNote = hpgRestrictedState
     ? `Variación estatal (${stateCode}): Verificar reglas locales de HPG.${hwDetail}${guardDetail}${!presidioAvailable ? ` Presidio Fortress: SOLO disponible en TX.` : ''}`
     : stateCode
-      ? `Estado ${stateCode}: HPG, Guard${guardAvailable ? ' (disponible)' : ' (no disponible)'}, HospitalWise${hwAvailable ? ' (disponible)' : ' (no disponible)'}, Affordable Choice, Presidio${presidioAvailable ? ' (disponible TX)' : ' (SOLO en TX)'}, MedMax, BMI-PHCS, AFI y ACUSA.${hwDetail}${guardDetail}`
+      ? `Estado ${stateCode}: HPG, Guard${guardAvailable ? ' (disponible)' : ' (no disponible)'}, HospitalWise${hwAvailable ? ' (disponible)' : ' (no disponible)'}, Affordable Choice, Presidio${presidioAvailable ? ' (disponible TX)' : ' (SOLO en TX)'}, MedMax, Premier Major Medical, Premier Max, BMI-PHCS, AFI y ACUSA.${hwDetail}${guardDetail}`
       : 'Ingresa un Estado o ZIP Code de 5 dígitos para validar disponibilidad regional.';
 
   let ageNote = '';
   if (hasSenior65Plus) {
     ageNote =
-      'Edad 65+ detectada: HPG, MedMax (18-64) y planes ACA aplican normalmente hasta los 64 años (evaluar Medicare para 65+).';
+      'Edad 65+ detectada: HPG, MedMax (18-64), Premier Major Medical (18-64), Premier Max (18-64) y planes ACA aplican normalmente hasta los 64 años (evaluar Medicare para 65+).';
   } else if (ages.length > 0) {
     const adults = ages.filter(a => a >= 18).length;
     const kids = ages.filter(a => a < 18).length;
     const medmaxRange = detectMedMaxAgeBracket(agesStr);
-    ageNote = `Edades validadas (${ages.join(', ')} años): ${adults} adulto(s) y ${kids} menor(es) • Rango MedMax: ${medmaxRange}.`;
+    ageNote = `Edades validadas (${ages.join(', ')} años): ${adults} adulto(s) y ${kids} menor(es) • Rango MedMax / Premier: ${medmaxRange}.`;
   } else {
-    ageNote = 'Agrega las edades de los solicitantes para calcular tarifas por edad en MedMax y Affordable Choice.';
+    ageNote = 'Agrega las edades de los solicitantes para calcular tarifas por edad en MedMax, Premier Major Medical, Premier Max y Affordable Choice.';
   }
 
   return {
