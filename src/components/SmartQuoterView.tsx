@@ -516,8 +516,11 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
       company: 'BMI-PHCS (Red PHCS)',
       planName: spec.title,
       tier: spec.tierLabel,
-      subtitleTag: `RED PHCS • ${isMec ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()}`,
+      subtitleTag: `RED PHCS • ${isMec ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()} • +$75 FEE 1.ER MES`,
       premium: rate,
+      hasEnrollmentFee: true,
+      enrollmentFee: '75.00',
+      enrollmentFeeLabel: 'tarifa única de inscripción (BMI-PHCS)',
       deductible: '$0 Ind. / $0 Fam.',
       moop: spec.moopLabel,
       primaryCare: spec.pcpLabel,
@@ -528,12 +531,16 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
       extraBenefit: isMec
         ? 'Plan MEC bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional).'
         : 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).',
-      clientSummary: `${spec.title}: $${rate}/mes con $0 deducible.`,
+      clientSummary: `${spec.title}: $${rate}/mes (+$75.00 fee único de inscripción solo en el 1.er mes).`,
       isRecommended: false
     };
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
-    onShowToast(`${spec.title} Agregado`, `Tarifa oficial cargada ($${rate}/mes, $0 deducible).`, 'success');
+    onShowToast(
+      `${spec.title} Agregado`,
+      `Tarifa oficial $${rate}/mes (+$75.00 fee único solo 1.er mes → $${(parseFloat(rate) + 75).toFixed(2)}).`,
+      'success'
+    );
   };
 
   const addAfiPlan = (level: AfiLevel = 'copay3500') => {
@@ -1089,8 +1096,11 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
           company: 'BMI-PHCS (Red PHCS)',
           planName: spec.title,
           tier: spec.tierLabel,
-          subtitleTag: `RED PHCS • ${isMec ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()}`,
+          subtitleTag: `RED PHCS • ${isMec ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()} • +$75 FEE 1.ER MES`,
           premium: spec.rates[nextFam].toFixed(2),
+          hasEnrollmentFee: p.hasEnrollmentFee !== false,
+          enrollmentFee: p.enrollmentFee || '75.00',
+          enrollmentFeeLabel: 'tarifa única de inscripción (BMI-PHCS)',
           deductible: '$0 Ind. / $0 Fam.',
           moop: spec.moopLabel,
           primaryCare: spec.pcpLabel,
@@ -1225,7 +1235,15 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
             );
           } else if (value === 'bmi_phcs') {
             next = enforceOfficialCatalogOnPlan(
-              { ...next, planCategory: 'bmi_phcs', bmiLevel: next.bmiLevel || 'choice', premium: '' },
+              {
+                ...next,
+                planCategory: 'bmi_phcs',
+                bmiLevel: next.bmiLevel || 'choice',
+                premium: '',
+                hasEnrollmentFee: true,
+                enrollmentFee: '75.00',
+                enrollmentFeeLabel: 'tarifa única de inscripción (BMI-PHCS)'
+              },
               ctx
             );
           } else if (value === 'afi') {
@@ -4158,7 +4176,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                             </label>
                           )}
 
-                          {(isAfi || isAcusa) && (
+                          {(isAfi || isAcusa || isBmiPhcs) && (
                             <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-blue-800">
                               <input
                                 type="checkbox"
@@ -4171,7 +4189,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                                 }}
                                 className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
                               />
-                              <span>Cargo Único Solicitud (+$75.00 en 1.er Mes)</span>
+                              <span>Cargo Único Inscripción / Solicitud (+$75.00 solo 1.er Mes)</span>
                             </label>
                           )}
 

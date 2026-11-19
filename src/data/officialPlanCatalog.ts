@@ -1376,6 +1376,9 @@ export const enforceOfficialCatalogOnPlan = (
       genericRx: spec.rxLabel,
       urgencies: spec.urgenciesLabel,
       highlights: spec.bullets,
+      hasEnrollmentFee: plan.hasEnrollmentFee !== false,
+      enrollmentFee: plan.enrollmentFee || '75.00',
+      enrollmentFeeLabel: 'tarifa única de inscripción (BMI-PHCS)',
       extraBenefit:
         level === 'classic' || level === 'choice'
           ? 'Plan MEC bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional).'
