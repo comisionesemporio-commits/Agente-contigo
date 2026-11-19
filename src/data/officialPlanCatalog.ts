@@ -689,22 +689,60 @@ export interface BmiPhcsSpec {
   title: string;
   shortLabel: string;
   tierLabel: string;
+  rates: Record<EnrollFamilyTier, number>;
   moopLabel: string;
   pcpLabel: string;
   specialistLabel: string;
+  rxLabel: string;
   urgenciesLabel: string;
   bullets: string[];
 }
 
 export const BMI_PHCS_SPECS: Record<BmiPhcsLevel, BmiPhcsSpec> = {
+  classic: {
+    level: 'classic',
+    title: 'BMI-PHCS Classic (MEC · Red PHCS)',
+    shortLabel: 'Classic',
+    tierLabel: 'BMI-PHCS Classic (MEC Option) • Red PHCS ($0 Deducible)',
+    rates: { empleado: 127.5, pareja: 181.9, hijos: 181.9, familiar: 231.67 },
+    moopLabel: 'N/A (MEC Básico)',
+    pcpLabel: 'No cubierto (Preventivo & Telemedicina $0 ilimitada)',
+    specialistLabel: 'No cubierto',
+    rxLabel: 'Preventivo genérico $0 (No preventivo no cubierto)',
+    urgenciesLabel: 'Telemedicina $0 ilimitada • Urgent Care no cubierto',
+    bullets: [
+      'Aviso Oficial del Plan (MEC Options): Plan bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional). Deducible $0 Ind. / $0 Fam. Máximo Fuera de Bolsillo: N/A.',
+      'Preventivo y Telemedicina: Cuidado Preventivo y Bienestar (no hospitalario) Incluido ($0). Telemedicina $0 copago ilimitada. Médico Primario (PCP), Especialista (incl. salud mental), Urgent Care, Laboratorio/Radiología y CT/MRI/MRA/PET Scan: No cubiertos.',
+      'Hospital, Cirugía y Farmacia: Servicios ambulatorios en hospital o centro quirúrgico, anestesia y segunda opinión quirúrgica: No cubiertos. Farmacia (sujeto a formulario): Genéricos preventivos $0 copago (medicamentos no preventivos no cubiertos).'
+    ]
+  },
+  choice: {
+    level: 'choice',
+    title: 'BMI-PHCS Choice (MEC · Red PHCS)',
+    shortLabel: 'Choice',
+    tierLabel: 'BMI-PHCS Choice (MEC Option) • Red PHCS ($0 Deducible)',
+    rates: { empleado: 209.1, pareja: 290.7, hijos: 290.7, familiar: 399.5 },
+    moopLabel: '$8,700 Individual / $17,400 Familiar',
+    pcpLabel: '$35 copago (no hosp.) + Preventivo incluido',
+    specialistLabel: '$75 copago (no hosp., incl. salud mental)',
+    rxLabel: 'Preventivo $0 / Genérico no prev. $5 copago',
+    urgenciesLabel: 'Urgent Care $85 copago • Telemedicina $0 ilimitada',
+    bullets: [
+      'Aviso Oficial del Plan (MEC Options): Plan bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional). Deducible $0 Ind. / $0 Fam. Máximo Fuera de Bolsillo: $8,700 Ind. / $17,400 Fam.',
+      'Preventivo, Consultas y Diagnóstico: Preventivo y Bienestar (no hosp.) Incluido. Médico Primario (PCP) $35 copago. Especialista (incl. salud mental) $75 copago. Urgent Care $85 copago. Telemedicina $0 copago ilimitada. Laboratorio y Radiología (no hosp.) $50 copago. CT/MRI/MRA/PET Scan (no hosp., preautorización) $500 copago (3/año).',
+      'Hospital, Cirugía y Farmacia: Servicios ambulatorios en hospital o centro quirúrgico, anestesia y segunda opinión quirúrgica: No cubiertos. Farmacia (sujeto a formulario): Genéricos preventivos $0 copago y Genéricos no preventivos (retail) $5 copago.'
+    ]
+  },
   basic: {
     level: 'basic',
     title: 'BMI-PHCS Basic (Red PHCS)',
     shortLabel: 'Basic',
     tierLabel: 'BMI-PHCS Basic • Beneficio Limitado por Día ($0 Deducible)',
+    rates: { empleado: 583.51, pareja: 925.24, hijos: 818.8, familiar: 1160.54 },
     moopLabel: '$8,700 Individual / $17,400 Familiar',
     pcpLabel: '$25 copago (8 visitas/año)',
     specialistLabel: '$50 copago (8 visitas/año, incl. salud mental)',
+    rxLabel: 'Preventivo $0 / Genérico no prev. $5 (Marca no cubierta)',
     urgenciesLabel: 'UC $50 (2/año) • Telemedicina $0 • ER $350 (1/año)',
     bullets: [
       'Aviso Oficial del Plan: Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional). Deducible $0 Ind. / $0 Fam. Máximo de Bolsillo: $8,700 Ind. / $17,400 Fam. (el máximo de bolsillo no elimina los topes de días ni habilita beneficios no cubiertos).',
@@ -717,9 +755,11 @@ export const BMI_PHCS_SPECS: Record<BmiPhcsLevel, BmiPhcsSpec> = {
     title: 'BMI-PHCS Value (Red PHCS)',
     shortLabel: 'Value',
     tierLabel: 'BMI-PHCS Value • Beneficio Limitado por Día ($0 Deducible)',
+    rates: { empleado: 644.12, pareja: 1058.6, hijos: 927.93, familiar: 1342.39 },
     moopLabel: '$5,000 Individual / $10,000 Familiar',
     pcpLabel: '$15 copago (10 visitas/año)',
     specialistLabel: '$25 copago (10 visitas/año, incl. salud mental)',
+    rxLabel: 'Preventivo $0 / Genérico no prev. $5 (Marca no cubierta)',
     urgenciesLabel: 'UC $35 (3/año) • Telemedicina $0 • ER $350 (1/año)',
     bullets: [
       'Aviso Oficial del Plan: Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional). Deducible $0 Ind. / $0 Fam. Máximo de Bolsillo: $5,000 Ind. / $10,000 Fam. (el máximo de bolsillo no elimina los topes de días).',
@@ -732,9 +772,11 @@ export const BMI_PHCS_SPECS: Record<BmiPhcsLevel, BmiPhcsSpec> = {
     title: 'BMI-PHCS Advantage (Red PHCS)',
     shortLabel: 'Advantage',
     tierLabel: 'BMI-PHCS Advantage • Beneficio Limitado por Día ($0 Deducible)',
+    rates: { empleado: 691.45, pareja: 1138.1, hijos: 989.21, familiar: 1435.86 },
     moopLabel: '$5,000 Individual / $10,000 Familiar',
     pcpLabel: '$15 copago (12 visitas/año)',
     specialistLabel: '$25 copago (12 visitas/año, incl. salud mental)',
+    rxLabel: 'Preventivo $0 / Genérico no prev. $5 (Marca no cubierta)',
     urgenciesLabel: 'UC $35 (3/año) • Telemedicina $0 • ER $350 (2/año)',
     bullets: [
       'Aviso Oficial del Plan: Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional). Deducible $0 Ind. / $0 Fam. Máximo de Bolsillo: $5,000 Ind. / $10,000 Fam.',
@@ -1028,6 +1070,15 @@ export const isHpgPlan = (plan: QuotePlan): boolean => {
   return text.includes('protectorguard') || /\bhpg\b/.test(text);
 };
 
+export const detectBmiPhcsLevelFromText = (text: string): BmiPhcsLevel => {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('classic') || lower.includes('clásico') || lower.includes('clasico')) return 'classic';
+  if (lower.includes('choice')) return 'choice';
+  if (lower.includes('advantage')) return 'advantage';
+  if (lower.includes('basic') || lower.includes('básico') || lower.includes('basico')) return 'basic';
+  return 'value';
+};
+
 export const isBmiPhcsPlan = (plan: QuotePlan): boolean => {
   if (plan.planCategory === 'bmi_phcs') return true;
   const text = `${plan.company} ${plan.planName} ${plan.tier}`.toLowerCase();
@@ -1112,9 +1163,7 @@ export const getExactOfficialBulletsForPlan = (plan: QuotePlan): string[] => {
     return MEDMAX_OFFICIAL_BULLETS;
   }
   if (isBmiPhcsPlan(plan)) {
-    const lower = `${plan.planName} ${plan.tier}`.toLowerCase();
-    const level: BmiPhcsLevel =
-      plan.bmiLevel || (lower.includes('advantage') ? 'advantage' : lower.includes('value') ? 'value' : 'basic');
+    const level = plan.bmiLevel || detectBmiPhcsLevelFromText(`${plan.planName} ${plan.tier}`);
     return BMI_PHCS_SPECS[level].bullets;
   }
   if (isAfiPlan(plan)) {
@@ -1309,9 +1358,7 @@ export const enforceOfficialCatalogOnPlan = (
   }
 
   if (isBmiPhcsPlan(plan)) {
-    const lower = `${plan.planName} ${plan.tier}`.toLowerCase();
-    const level: BmiPhcsLevel =
-      plan.bmiLevel || (lower.includes('advantage') ? 'advantage' : lower.includes('value') ? 'value' : 'basic');
+    const level = plan.bmiLevel || detectBmiPhcsLevelFromText(`${plan.planName} ${plan.tier}`);
     const spec = BMI_PHCS_SPECS[level];
     return {
       ...plan,
@@ -1320,15 +1367,19 @@ export const enforceOfficialCatalogOnPlan = (
       company: 'BMI-PHCS (Red PHCS)',
       planName: spec.title,
       tier: spec.tierLabel,
-      subtitleTag: `RED PHCS • PLAN DE BENEFICIO LIMITADO POR DÍA • ${spec.shortLabel.toUpperCase()}`,
+      subtitleTag: `RED PHCS • ${level === 'classic' || level === 'choice' ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()}`,
+      premium: parseMoney(plan.premium) > 0 ? plan.premium : spec.rates[famTier].toFixed(2),
       deductible: '$0 Ind. / $0 Fam.',
       moop: spec.moopLabel,
       primaryCare: spec.pcpLabel,
       specialist: spec.specialistLabel,
-      genericRx: 'Telemedicina $0 ilimitada',
+      genericRx: spec.rxLabel,
       urgencies: spec.urgenciesLabel,
       highlights: spec.bullets,
-      extraBenefit: 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).',
+      extraBenefit:
+        level === 'classic' || level === 'choice'
+          ? 'Plan MEC bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional).'
+          : 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).',
       hasSanitasFee: false
     };
   }

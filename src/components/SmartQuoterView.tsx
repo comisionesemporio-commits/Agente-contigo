@@ -46,6 +46,7 @@ import {
   SANITAS_OFFICIAL_BULLETS,
   detectAffordableChoiceGroupKey,
   detectAffordableChoiceLevelFromText,
+  detectBmiPhcsLevelFromText,
   detectClosestAffordableChoiceAge,
   detectEnrollFamilyTier,
   detectGuardLevelFromText,
@@ -503,30 +504,36 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
   const addBmiPhcsPlan = (level: BmiPhcsLevel = 'value') => {
     const newId = `plan_bmi_${level}_` + Date.now();
     const spec = BMI_PHCS_SPECS[level];
+    const famTier = detectEnrollFamilyTier(clientMembers, clientAges);
+    const rate = spec.rates[famTier].toFixed(2);
+    const isMec = level === 'classic' || level === 'choice';
     const created: QuotePlan = {
       id: newId,
       tag: `BMI-PHCS ${spec.shortLabel.toUpperCase()}`,
       planCategory: 'bmi_phcs',
       bmiLevel: level,
+      medmaxFamilyTier: famTier,
       company: 'BMI-PHCS (Red PHCS)',
       planName: spec.title,
       tier: spec.tierLabel,
-      subtitleTag: `RED PHCS • PLAN DE BENEFICIO LIMITADO POR DÍA • ${spec.shortLabel.toUpperCase()}`,
-      premium: '',
+      subtitleTag: `RED PHCS • ${isMec ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()}`,
+      premium: rate,
       deductible: '$0 Ind. / $0 Fam.',
       moop: spec.moopLabel,
       primaryCare: spec.pcpLabel,
       specialist: spec.specialistLabel,
-      genericRx: 'Telemedicina $0 ilimitada',
+      genericRx: spec.rxLabel,
       urgencies: spec.urgenciesLabel,
       highlights: spec.bullets,
-      extraBenefit: 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).',
-      clientSummary: `${spec.title} con $0 deducible y tope definido de días.`,
+      extraBenefit: isMec
+        ? 'Plan MEC bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional).'
+        : 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).',
+      clientSummary: `${spec.title}: $${rate}/mes con $0 deducible.`,
       isRecommended: false
     };
     setPlans(prev => [...prev, created]);
     setLastAddedPlanId(newId);
-    onShowToast(`${spec.title} Agregado`, 'Beneficios oficiales cargados. Ingresa la prima mensual.', 'success');
+    onShowToast(`${spec.title} Agregado`, `Tarifa oficial cargada ($${rate}/mes, $0 deducible).`, 'success');
   };
 
   const addAfiPlan = (level: AfiLevel = 'copay3500') => {
@@ -1060,29 +1067,42 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
     );
   };
 
-  // Actualizar BMI-PHCS (Basic / Value / Advantage)
-  const changeBmiLevel = (id: string, level: BmiPhcsLevel) => {
-    const spec = BMI_PHCS_SPECS[level];
+  // Actualizar BMI-PHCS (Classic / Choice / Basic / Value / Advantage y grupo familiar)
+  const updateBmiConfig = (
+    id: string,
+    updates: Partial<{ level: BmiPhcsLevel; familyTier: EnrollFamilyTier }>
+  ) => {
     setPlans(prev =>
-      prev.map(p =>
-        p.id === id
-          ? {
-              ...p,
-              planCategory: 'bmi_phcs',
-              bmiLevel: level,
-              company: 'BMI-PHCS (Red PHCS)',
-              planName: spec.title,
-              tier: spec.tierLabel,
-              subtitleTag: `RED PHCS • PLAN DE BENEFICIO LIMITADO POR DÍA • ${spec.shortLabel.toUpperCase()}`,
-              deductible: '$0 Ind. / $0 Fam.',
-              moop: spec.moopLabel,
-              primaryCare: spec.pcpLabel,
-              specialist: spec.specialistLabel,
-              urgencies: spec.urgenciesLabel,
-              highlights: spec.bullets
-            }
-          : p
-      )
+      prev.map(p => {
+        if (p.id !== id) return p;
+        const nextLevel =
+          updates.level || p.bmiLevel || detectBmiPhcsLevelFromText(`${p.planName} ${p.tier}`);
+        const nextFam =
+          updates.familyTier || p.medmaxFamilyTier || detectEnrollFamilyTier(clientMembers, clientAges);
+        const spec = BMI_PHCS_SPECS[nextLevel];
+        const isMec = nextLevel === 'classic' || nextLevel === 'choice';
+        return {
+          ...p,
+          planCategory: 'bmi_phcs',
+          bmiLevel: nextLevel,
+          medmaxFamilyTier: nextFam,
+          company: 'BMI-PHCS (Red PHCS)',
+          planName: spec.title,
+          tier: spec.tierLabel,
+          subtitleTag: `RED PHCS • ${isMec ? 'MEC OPTION' : 'BENEFICIO LIMITADO POR DÍA'} • ${spec.shortLabel.toUpperCase()}`,
+          premium: spec.rates[nextFam].toFixed(2),
+          deductible: '$0 Ind. / $0 Fam.',
+          moop: spec.moopLabel,
+          primaryCare: spec.pcpLabel,
+          specialist: spec.specialistLabel,
+          genericRx: spec.rxLabel,
+          urgencies: spec.urgenciesLabel,
+          highlights: spec.bullets,
+          extraBenefit: isMec
+            ? 'Plan MEC bajo Red PHCS administrado por MBA Employee Benefits (no es seguro médico mayor tradicional).'
+            : 'Plan de beneficio limitado por día bajo Red PHCS (no es seguro médico mayor tradicional).'
+        };
+      })
     );
   };
 
@@ -1205,7 +1225,7 @@ export const SmartQuoterView: React.FC<SmartQuoterViewProps> = ({
             );
           } else if (value === 'bmi_phcs') {
             next = enforceOfficialCatalogOnPlan(
-              { ...next, planCategory: 'bmi_phcs', bmiLevel: next.bmiLevel || 'value' },
+              { ...next, planCategory: 'bmi_phcs', bmiLevel: next.bmiLevel || 'choice', premium: '' },
               ctx
             );
           } else if (value === 'afi') {
@@ -1487,7 +1507,7 @@ Contexto del cliente:
 - Edad(es) de los solicitantes: ${clientAges || 'No especificadas'}
 
 Instrucciones estrictas:
-1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, Guard 4000/5000/6000, ManhattanLife Affordable Choice Classic/Classic Plus/Elite/Elite Plus, Presidio Fortress Elite 2.5K/Secure 5K/Value 7.5K/Essential 10K solo TX, MedMax, BMI-PHCS Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, "guardLevel" ("guard4000", "guard5000" o "guard6000") si es Guard Plans, "affordableChoiceLevel" ("classic", "classic_plus", "elite" o "elite_plus") si es Affordable Choice, "presidioLevel" ("elite2500", "secure5000", "value7500" o "essential10000") si es Presidio Fortress, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
+1. Si identificas un plan del catálogo cerrado (Sanitas Care Plus, Health ProtectorGuard Select 2000/Preferred 4000/Premier 5000, Guard 4000/5000/6000, ManhattanLife Affordable Choice Classic/Classic Plus/Elite/Elite Plus, Presidio Fortress Elite 2.5K/Secure 5K/Value 7.5K/Essential 10K solo TX, MedMax, BMI-PHCS Classic/Choice/Basic/Value/Advantage, AFI 3500 HSA/Copay, ACUSA Bronze 2/Silver 2 o HospitalWise Basic/Bundle 1/Bundle 2), indica exactamente su categoría en "planCategory", su nivel exacto en "hpgLevel" ("select2000", "preferred4000" o "premier5000") si es HPG, "guardLevel" ("guard4000", "guard5000" o "guard6000") si es Guard Plans, "affordableChoiceLevel" ("classic", "classic_plus", "elite" o "elite_plus") si es Affordable Choice, "presidioLevel" ("elite2500", "secure5000", "value7500" o "essential10000") si es Presidio Fortress, o "hospitalwiseLevel" ("basic", "bundle1" o "bundle2") si es HospitalWise, junto con la prima mensual y el deducible mostrados.
 2. Si es un plan ACA (Obamacare), extrae EXACTAMENTE de la captura/PDF: Aseguradora, Nombre exacto del plan, Nivel (Bronce/Plata/Oro), ID del plan ("planIdCode"), Prima con crédito fiscal ("premium"), Ahorro mensual o crédito fiscal ("subsidyAmount"), Deducible anual ("deductible"), Máximo de bolsillo ("moop"), Requisito de referido ("referralRequired"), y desglosa las 4 áreas médicas exactas ("primaryCare", "specialist", "acaLabsImaging", "acaErHospital", "acaRxTiers").
 
 Responde ÚNICAMENTE un array JSON válido con esta estructura:
@@ -1614,6 +1634,9 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 : detectHospitalWiseLevelFromText(combinedName)
               : undefined;
 
+          const bmiLevelDetected: BmiPhcsLevel | undefined =
+            detectedCategory === 'bmi_phcs' ? detectBmiPhcsLevelFromText(combinedName) : undefined;
+
           const basePlan: QuotePlan = {
             id: 'plan_ai_' + Date.now() + '_' + idx,
             tag: idx === 0 ? 'OPCIÓN PRINCIPAL RECOMENDADA' : 'OPCIÓN DE COBERTURA',
@@ -1623,6 +1646,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
             affordableChoiceLevel: affordableChoiceLevelDetected,
             presidioLevel: presidioLevelDetected,
             hospitalwiseLevel: hospitalwiseLevelDetected,
+            bmiLevel: bmiLevelDetected,
             company: p.company || 'Aseguradora',
             planName: p.planName || 'Plan Médico',
             tier: p.tier || 'Estándar',
@@ -3093,27 +3117,43 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                 </div>
               </div>
 
-              {/* 7. + BMI-PHCS */}
+              {/* 7. + BMI-PHCS (MEC Classic / Choice + MVP Basic / Value / Advantage) */}
               <div className="p-2.5 rounded-2xl border border-teal-300 bg-teal-50/50 text-teal-950 flex flex-col justify-between gap-1.5 shadow-xs h-full">
                 <button
                   type="button"
-                  onClick={() => addBmiPhcsPlan('value')}
+                  onClick={() => addBmiPhcsPlan('choice')}
                   className="w-full text-left flex items-center justify-between gap-1 cursor-pointer hover:opacity-80"
                 >
                   <span className="font-black text-xs">+ BMI-PHCS (Red PHCS)</span>
                   <Plus className="w-3.5 h-3.5 opacity-70 shrink-0" />
                 </button>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['basic', 'value', 'advantage'] as BmiPhcsLevel[]).map(lvl => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => addBmiPhcsPlan(lvl)}
-                      className="py-1 px-1 rounded-lg bg-white hover:bg-teal-600 hover:text-white border border-teal-200 text-[10px] font-black transition cursor-pointer text-center"
-                    >
-                      {BMI_PHCS_SPECS[lvl].shortLabel}
-                    </button>
-                  ))}
+                <div className="space-y-1">
+                  <div className="grid grid-cols-2 gap-1">
+                    {(['classic', 'choice'] as BmiPhcsLevel[]).map(lvl => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => addBmiPhcsPlan(lvl)}
+                        className="py-1 px-1 rounded-lg bg-white hover:bg-emerald-700 hover:text-white border border-emerald-300 text-[10px] font-black transition cursor-pointer text-center"
+                        title={`Agregar ${BMI_PHCS_SPECS[lvl].title} ($${BMI_PHCS_SPECS[lvl].rates.empleado}/mes Ind.)`}
+                      >
+                        {BMI_PHCS_SPECS[lvl].shortLabel}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['basic', 'value', 'advantage'] as BmiPhcsLevel[]).map(lvl => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => addBmiPhcsPlan(lvl)}
+                        className="py-1 px-1 rounded-lg bg-white hover:bg-teal-600 hover:text-white border border-teal-200 text-[10px] font-black transition cursor-pointer text-center"
+                        title={`Agregar ${BMI_PHCS_SPECS[lvl].title}`}
+                      >
+                        {BMI_PHCS_SPECS[lvl].shortLabel}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -3293,12 +3333,7 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                     : { isValid: true, reason: '', closestTier: 750 as MedMaxDeductibleTier };
 
                   const currentBmiLevel: BmiPhcsLevel =
-                    plan.bmiLevel ||
-                    (plan.planName.toLowerCase().includes('advantage')
-                      ? 'advantage'
-                      : plan.planName.toLowerCase().includes('basic')
-                        ? 'basic'
-                        : 'value');
+                    plan.bmiLevel || detectBmiPhcsLevelFromText(`${plan.planName} ${plan.tier}`);
                   const currentAfiLevel: AfiLevel =
                     plan.afiLevel || (plan.planName.toLowerCase().includes('hsa') ? 'hsa3500' : 'copay3500');
                   const currentAcusaLevel: AcusaLevel =
@@ -3699,25 +3734,48 @@ Responde ÚNICAMENTE un array JSON válido con esta estructura:
                         </div>
                       )}
 
-                      {/* Selector BMI-PHCS */}
+                      {/* Selector BMI-PHCS (Classic / Choice / Basic / Value / Advantage + Grupo Familiar) */}
                       {isBmiPhcs && (
-                        <div className="bg-teal-50/70 p-2.5 rounded-xl border border-teal-200 flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-[10px] font-black uppercase text-teal-950">
-                            Nivel BMI-PHCS (Red PHCS • Beneficio Limitado por Día):
-                          </span>
-                          <div className="flex gap-1.5">
-                            {(['basic', 'value', 'advantage'] as BmiPhcsLevel[]).map(lvl => (
+                        <div className="bg-teal-50/70 p-2.5 rounded-xl border border-teal-200 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-black uppercase text-teal-950">
+                              Nivel BMI-PHCS (Red PHCS • $0 Deducible):
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(['classic', 'choice', 'basic', 'value', 'advantage'] as BmiPhcsLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => updateBmiConfig(plan.id, { level: lvl })}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
+                                    currentBmiLevel === lvl
+                                      ? 'bg-teal-700 text-white border-teal-800'
+                                      : 'bg-white text-teal-900 border-teal-200 hover:bg-teal-100'
+                                  }`}
+                                >
+                                  {BMI_PHCS_SPECS[lvl].shortLabel}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              { key: 'empleado' as EnrollFamilyTier, label: 'Individual' },
+                              { key: 'pareja' as EnrollFamilyTier, label: 'Titular+Cónyuge' },
+                              { key: 'hijos' as EnrollFamilyTier, label: 'Titular+Hijo(s)' },
+                              { key: 'familiar' as EnrollFamilyTier, label: 'Familia Completa' }
+                            ].map(opt => (
                               <button
-                                key={lvl}
+                                key={opt.key}
                                 type="button"
-                                onClick={() => changeBmiLevel(plan.id, lvl)}
-                                className={`px-3 py-1 rounded-lg text-[10px] font-black border cursor-pointer ${
-                                  currentBmiLevel === lvl
-                                    ? 'bg-teal-700 text-white border-teal-800'
+                                onClick={() => updateBmiConfig(plan.id, { familyTier: opt.key })}
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold border cursor-pointer ${
+                                  currentMedMaxFam === opt.key
+                                    ? 'bg-slate-900 text-white border-slate-900'
                                     : 'bg-white text-teal-900 border-teal-200 hover:bg-teal-100'
                                 }`}
                               >
-                                {BMI_PHCS_SPECS[lvl].shortLabel}
+                                {opt.label} (${BMI_PHCS_SPECS[currentBmiLevel].rates[opt.key].toFixed(2)})
                               </button>
                             ))}
                           </div>

@@ -143,7 +143,7 @@ export type MedMaxDeductibleTier = 250 | 500 | 750 | 1000 | 1500;
 export type MedMaxAgeBracket = '18-29' | '30-44' | '45-54' | '55-64';
 export type MedMaxScope = 'individual' | 'familiar';
 export type EnrollFamilyTier = 'empleado' | 'pareja' | 'hijos' | 'familiar';
-export type BmiPhcsLevel = 'basic' | 'value' | 'advantage';
+export type BmiPhcsLevel = 'classic' | 'choice' | 'basic' | 'value' | 'advantage';
 export type AfiLevel = 'hsa3500' | 'copay3500';
 export type AcusaLevel = 'bronze2' | 'silver2';
 
